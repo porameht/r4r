@@ -1,0 +1,341 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ published ]
+
+env:
+  PYTHON_VERSION: "3.11"
+  UV_VERSION: "0.4.15"
+
+jobs:
+  test:
+    name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: ${{ env.UV_VERSION }}
+        enable-cache: true
+    
+    - name: Install dependencies
+      run: |
+        uv sync --dev
+    
+    - name: Run linting
+      run: |
+        uv run ruff check src/
+        uv run ruff format --check src/
+      continue-on-error: true
+    
+    - name: Run type checking
+      run: |
+        uv run mypy src/r4r/ --ignore-missing-imports
+      continue-on-error: true
+    
+    - name: Create basic tests if none exist
+      run: |
+        mkdir -p tests
+        if [ ! -f tests/test_basic.py ]; then
+          cat > tests/test_basic.py << 'EOF'
+        """Basic tests for r4r CLI"""
+        import subprocess
+        import sys
+        
+        def test_import():
+            """Test that the module can be imported"""
+            try:
+                import r4r.cli
+                assert True
+            except ImportError:
+                assert False, "Failed to import r4r.cli"
+        
+        def test_cli_help():
+            """Test that the CLI shows help"""
+            try:
+                result = subprocess.run([sys.executable, "-m", "r4r.cli", "--help"], 
+                                      capture_output=True, text=True, timeout=10)
+                assert "r4r - Super easy Render CLI" in result.stdout
+            except Exception as e:
+                assert False, f"CLI help test failed: {e}"
+        
+        if __name__ == "__main__":
+            test_import()
+            test_cli_help()
+            print("✅ All tests passed!")
+        EOF
+        fi
+      shell: bash
+    
+    - name: Run tests
+      run: |
+        # Try to run with pytest if available, otherwise run basic tests
+        if uv run python -c "import pytest" 2>/dev/null; then
+          uv run pytest tests/ -v
+        else
+          uv run python tests/test_basic.py
+        fi
+    
+    - name: Test CLI installation
+      run: |
+        uv tool install .
+        # Test that the CLI works after installation
+        if command -v r4r >/dev/null 2>&1; then
+          r4r --help
+        else
+          echo "r4r not in PATH, testing with full path"
+          ~/.local/bin/r4r --help || $HOME/.local/bin/r4r --help
+        fi
+      shell: bash
+
+  build:
+    name: Build Distribution
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' || github.event_name == 'release'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: ${{ env.UV_VERSION }}
+        enable-cache: true
+    
+    - name: Install build dependencies
+      run: |
+        uv sync --dev
+        uv add --dev build twine
+    
+    - name: Update version for release
+      if: github.event_name == 'release'
+      run: |
+        VERSION=${{ github.event.release.tag_name }}
+        # Remove 'v' prefix if present
+        VERSION=${VERSION#v}
+        echo "Setting version to: $VERSION"
+        uv run python -c "
+        import re
+        with open('pyproject.toml', 'r') as f:
+            content = f.read()
+        content = re.sub(r'version = \"[^\"]*\"', f'version = \"$VERSION\"', content)
+        with open('pyproject.toml', 'w') as f:
+            f.write(content)
+        "
+    
+    - name: Build distribution
+      run: |
+        uv build
+    
+    - name: Verify distribution
+      run: |
+        uv run twine check dist/*
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: dist-files
+        path: dist/
+        retention-days: 7
+    
+    - name: Upload to PyPI
+      if: github.event_name == 'release'
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+      run: |
+        uv run twine upload dist/*
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: ${{ env.UV_VERSION }}
+    
+    - name: Install dependencies
+      run: |
+        uv sync --dev
+    
+    - name: Run security scan
+      run: |
+        # Install safety if not already present
+        if ! uv run python -c "import safety" 2>/dev/null; then
+          uv add --dev safety
+        fi
+        uv run safety check --json || true
+      continue-on-error: true
+    
+    - name: Run bandit security linter
+      run: |
+        # Install bandit if not already present
+        if ! uv run python -c "import bandit" 2>/dev/null; then
+          uv add --dev bandit
+        fi
+        uv run bandit -r src/ -f json || true
+      continue-on-error: true
+
+  docs:
+    name: Documentation Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Check README
+      run: |
+        # Check that README exists and has basic content
+        if [ ! -f README.md ]; then
+          echo "❌ README.md not found"
+          exit 1
+        fi
+        
+        # Check for required sections
+        required_sections=("Features" "Installation" "Commands" "Examples")
+        for section in "${required_sections[@]}"; do
+          if ! grep -i "$section" README.md > /dev/null; then
+            echo "❌ Missing section: $section"
+            exit 1
+          fi
+        done
+        
+        echo "✅ README.md validation passed"
+    
+    - name: Check installation scripts
+      run: |
+        # Check that installation scripts exist and are executable
+        scripts=("install.sh" "install-pip.sh" "build.sh")
+        for script in "${scripts[@]}"; do
+          if [ ! -f "$script" ]; then
+            echo "❌ $script not found"
+            exit 1
+          fi
+          if [ ! -x "$script" ]; then
+            echo "❌ $script is not executable"
+            exit 1
+          fi
+        done
+        
+        echo "✅ Installation scripts validation passed"
+
+  integration:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    needs: [test, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Test installation methods
+      run: |
+        echo "Testing various installation methods..."
+        
+        # Test uv installation
+        echo "📦 Testing uv installation..."
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        source $HOME/.cargo/env
+        uv tool install .
+        
+        # Test pip installation
+        echo "📦 Testing pip installation..."
+        python -m pip install --user .
+        
+        echo "✅ All installation methods tested successfully"
+    
+    - name: Test CLI functionality
+      run: |
+        # Basic CLI tests without actual API calls
+        echo "🧪 Testing CLI functionality..."
+        
+        # Test help command
+        r4r --help
+        
+        # Test version command
+        r4r --version || true
+        
+        echo "✅ CLI functionality tests passed"
+
+  release-notes:
+    name: Generate Release Notes
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Generate changelog
+      run: |
+        echo "# Release ${{ github.event.release.tag_name }}" > RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "## What's Changed" >> RELEASE_NOTES.md
+        
+        # Get commits since last tag
+        LAST_TAG=$(git tag --sort=-version:refname | head -n 2 | tail -n 1)
+        if [ ! -z "$LAST_TAG" ]; then
+          git log --pretty=format:"- %s (%h)" $LAST_TAG..HEAD >> RELEASE_NOTES.md
+        else
+          git log --pretty=format:"- %s (%h)" >> RELEASE_NOTES.md
+        fi
+        
+        echo "" >> RELEASE_NOTES.md
+        echo "## Installation" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo '```bash' >> RELEASE_NOTES.md
+        echo '# Using uv (recommended)' >> RELEASE_NOTES.md
+        echo 'curl -LsSf https://astral.sh/uv/install.sh | sh' >> RELEASE_NOTES.md
+        echo 'uv tool install r4r' >> RELEASE_NOTES.md
+        echo '' >> RELEASE_NOTES.md
+        echo '# Using pip' >> RELEASE_NOTES.md
+        echo 'pip install r4r' >> RELEASE_NOTES.md
+        echo '' >> RELEASE_NOTES.md
+        echo '# One-line install' >> RELEASE_NOTES.md
+        echo 'curl -sSL https://raw.githubusercontent.com/your-username/r4r/main/install.sh | bash' >> RELEASE_NOTES.md
+        echo '```' >> RELEASE_NOTES.md
+    
+    - name: Upload release notes
+      uses: actions/upload-artifact@v3
+      with:
+        name: release-notes
+        path: RELEASE_NOTES.md

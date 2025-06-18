@@ -2,14 +2,12 @@
 
 🚀 The simplest and most powerful way to manage your Render deployments with advanced features.
 
-[English](#english) | [ไทย](#ไทย)
-
 ## Features
 
 - **🚀 Complete Service Management**: Deploy, rebuild, and manage all your Render services
 - **⚡ One-Off Jobs**: Create and monitor background jobs with real-time status
 - **📊 Detailed Information**: Rich service details, deployment history, and logs
-- **🔍 Log Viewing**: Stream and view service logs directly from CLI
+- **🔍 Advanced Log Management**: TUI log viewer with real-time streaming, filtering, and log stream management
 - **🔐 Secure Authentication**: API key management with user information
 - **🎨 Beautiful UI**: Rich terminal interface with progress indicators
 - **⚡ Fast**: Built with modern Python tooling (uv, typer, rich)
@@ -74,6 +72,17 @@ r4r deploy myapp --clear
 |---------|-------------|---------|
 | `r4r deploys <name>` | List recent deployments | `r4r deploys myapp` |
 | `r4r logs <name>` | View service logs | `r4r logs myapp --lines 50` |
+| `r4r logs <name> --tui` | Interactive TUI log viewer | `r4r logs myapp --tui` |
+| `r4r tui` | Launch interactive TUI | `r4r tui --service myapp` |
+
+### Log Stream Management
+| Command | Description | Example |
+|---------|-------------|---------|
+| `r4r log-streams list` | List all log streams | `r4r log-streams list` |
+| `r4r log-streams create` | Create new log stream | `r4r log-streams create --name mystream --service srv-123` |
+| `r4r log-streams update` | Update log stream | `r4r log-streams update --id stream-123 --level error` |
+| `r4r log-streams delete` | Delete log stream | `r4r log-streams delete --id stream-123` |
+| `r4r stream-overrides list` | List stream overrides | `r4r stream-overrides list --stream stream-123` |
 
 ### One-Off Jobs
 | Command | Description | Example |
@@ -126,9 +135,20 @@ r4r rebuild myapp
 
 ### Advanced Features
 ```bash
-# View service logs
-r4r logs myapp --lines 100
-r4r logs myapp --follow  # Stream logs
+# Interactive TUI log viewer (recommended)
+r4r tui                              # Launch with service selection
+r4r tui --service myapp             # Launch for specific service
+r4r logs myapp --tui                # Launch TUI from logs command
+
+# Advanced log viewing
+r4r logs myapp --lines 100 --level error
+r4r logs myapp --follow --export logs.txt
+r4r logs myapp --tui                # Interactive viewer
+
+# Log stream management
+r4r log-streams list
+r4r log-streams create --name "error-logs" --service myapp --level error
+r4r log-streams update --id stream-123 --enabled
 
 # List recent deployments
 r4r deploys myapp --limit 5
@@ -164,11 +184,12 @@ export RENDER_API_KEY=rnd_xxx...
 r4r list  # Will use the environment variable
 ```
 
-### การดึง API Key (Thai)
-สามารถดึง API key ได้หลายวิธี:
-- ผ่าน CLI: `r4r login --key your_api_key`
-- ผ่าน Environment Variable: `export RENDER_API_KEY=your_key`
-- ผ่าน Interactive Mode: `r4r login` แล้วใส่ key เมื่อถูกถาม
+### API Key Retrieval
+You can retrieve and manage your API key through multiple methods:
+- Via CLI: `r4r login --key your_api_key`
+- Via Environment Variable: `export RENDER_API_KEY=your_key`
+- Via Interactive Mode: `r4r login` and enter key when prompted
+- View current key: `r4r whoami` (shows masked version)
 
 ## Development
 
@@ -188,111 +209,6 @@ uv run pytest
 uv build
 ```
 
----
-
-# ไทย
-
-## คุณสมบัติ
-
-- **🚀 จัดการเซอร์วิสแบบครบครัน**: Deploy, rebuild และจัดการ Render services ทั้งหมด
-- **⚡ One-Off Jobs**: สร้างและติดตาม background jobs แบบ real-time
-- **📊 ข้อมูลละเอียด**: ข้อมูลเซอร์วิส, ประวัติ deployment และ logs
-- **🔍 ดู Logs**: ดู logs ของเซอร์วิสโดยตรงจาก CLI
-- **🔐 ระบบรักษาความปลอดภัย**: การจัดการ API key พร้อมข้อมูลผู้ใช้
-- **🎨 UI สวยงาม**: Terminal interface แบบ rich พร้อม progress indicators
-- **⚡ เร็ว**: สร้างด้วย Python tooling สมัยใหม่
-- **🌐 ทนทานต่อเครือข่าย**: การจัดการ error และ retry logic ขั้นสูง
-
-## การติดตั้ง
-
-```bash
-# ติดตั้งด้วย uv (แนะนำ)
-uv tool install r4r
-
-# หรือใช้ pip
-pip install r4r
-```
-
-## การใช้งานเบื้องต้น
-
-```bash
-# 1. Login ด้วย API key
-r4r login
-
-# 2. ดูรายการ services
-r4r list
-
-# 3. Deploy service
-r4r deploy myapp
-
-# 4. ดู logs
-r4r logs myapp
-
-# 5. สร้าง job
-r4r job myapp "npm run migrate"
-```
-
-## คำสั่งหลัก
-
-### การยืนยันตัวตน
-- `r4r login` - เข้าสู่ระบบด้วย API key
-- `r4r whoami` - แสดงข้อมูลผู้ใช้ปัจจุบัน
-- `r4r logout` - ออกจากระบบ
-
-### การจัดการ Services
-- `r4r list` - แสดงรายการ services ทั้งหมด
-- `r4r info <ชื่อ>` - แสดงข้อมูลละเอียดของ service
-- `r4r deploy <ชื่อ>` - Deploy service
-- `r4r rebuild <ชื่อ>` - ล้าง cache และ deploy ใหม่
-
-### Logs และ Deployments
-- `r4r logs <ชื่อ>` - ดู logs ของ service
-- `r4r deploys <ชื่อ>` - แสดงประวัติ deployment
-
-### One-Off Jobs
-- `r4r job <ชื่อ> <คำสั่ง>` - สร้างและรัน job
-- `r4r jobs <ชื่อ>` - แสดงรายการ jobs
-- `r4r status <job_id>` - ตรวจสอบสถานะ job
-
-## ตัวอย่างการใช้งาน
-
-```bash
-# ดู services แบบละเอียด
-r4r list --detailed
-
-# Deploy พร้อมล้าง cache
-r4r deploy myapp --clear
-
-# ดู logs 100 บรรทัดล่าสุด
-r4r logs myapp --lines 100
-
-# สร้าง job และรอให้เสร็จ
-r4r job myapp "rails db:migrate" --wait
-
-# กรอง services ตามประเภท
-r4r list --type web_service
-```
-
-## การตั้งค่า API Key
-
-### วิธีที่ 1: Login แบบ Interactive
-```bash
-r4r login
-# จากนั้นใส่ API key เมื่อถูกถาม
-```
-
-### วิธีที่ 2: Login โดยตรง
-```bash
-r4r login --key rnd_xxx...
-```
-
-### วิธีที่ 3: ผ่าน Environment Variable
-```bash
-export RENDER_API_KEY=rnd_xxx...
-r4r list
-```
-
-**หมายเหตุ**: สามารถดึง API key ได้จาก [Render Dashboard](https://dashboard.render.com/u/settings#api-keys)
 
 ## License
 
@@ -311,4 +227,4 @@ If you encounter any issues or have questions:
 
 ---
 
-**หากต้องการความช่วยเหลือ**: สร้าง issue บน GitHub หรือตรวจสอบ API key permissions
+**Need help?**: Create an issue on GitHub or check your API key permissions

@@ -1,0 +1,228 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  PYTHON_VERSION: "3.11"
+  UV_VERSION: "0.4.15"
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: ${{ env.UV_VERSION }}
+    
+    - name: Get version from tag
+      id: get_version
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/v}
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+    
+    - name: Update version in pyproject.toml
+      run: |
+        uv run python -c "
+        import re
+        with open('pyproject.toml', 'r') as f:
+            content = f.read()
+        content = re.sub(r'version = \"[^\"]*\"', f'version = \"${{ steps.get_version.outputs.version }}\"', content)
+        with open('pyproject.toml', 'w') as f:
+            f.write(content)
+        "
+    
+    - name: Install build dependencies
+      run: |
+        uv sync --dev
+        uv add --dev build twine
+    
+    - name: Build distribution
+      run: |
+        uv build
+    
+    - name: Verify distribution
+      run: |
+        uv run twine check dist/*
+        
+        # List built files
+        echo "Built files:"
+        ls -la dist/
+        
+        # Get file sizes
+        echo "File sizes:"
+        du -h dist/*
+    
+    - name: Generate release notes
+      id: release_notes
+      run: |
+        echo "# Release ${{ steps.get_version.outputs.tag }}" > RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        
+        # Get the previous tag
+        PREV_TAG=$(git tag --sort=-version:refname | grep -v "${{ steps.get_version.outputs.tag }}" | head -n 1)
+        
+        if [ ! -z "$PREV_TAG" ]; then
+          echo "## What's Changed since $PREV_TAG" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          
+          # Get commits since previous tag
+          git log --pretty=format:"- %s (%h)" $PREV_TAG..${{ steps.get_version.outputs.tag }} >> RELEASE_NOTES.md
+        else
+          echo "## What's New" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "- Initial release of r4r - Super Easy Render CLI" >> RELEASE_NOTES.md
+          echo "- 🚀 Complete service management with advanced features" >> RELEASE_NOTES.md
+          echo "- ⚡ One-off job creation and monitoring" >> RELEASE_NOTES.md
+          echo "- 📊 Detailed service information and deployment history" >> RELEASE_NOTES.md
+          echo "- 🔍 Log viewing and real-time monitoring" >> RELEASE_NOTES.md
+          echo "- 🔐 Secure API key management" >> RELEASE_NOTES.md
+          echo "- 🎨 Beautiful terminal interface with rich output" >> RELEASE_NOTES.md
+          echo "- 🌐 Network resilient with advanced error handling" >> RELEASE_NOTES.md
+        fi
+        
+        echo "" >> RELEASE_NOTES.md
+        echo "## Features" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "### 🚀 Service Management" >> RELEASE_NOTES.md
+        echo "- Deploy and rebuild services with cache control" >> RELEASE_NOTES.md
+        echo "- List services with detailed information" >> RELEASE_NOTES.md
+        echo "- View service details and deployment history" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "### ⚡ One-Off Jobs" >> RELEASE_NOTES.md
+        echo "- Create and monitor background jobs" >> RELEASE_NOTES.md
+        echo "- Real-time job status tracking" >> RELEASE_NOTES.md
+        echo "- Wait for job completion with progress indicators" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "### 📊 Monitoring & Logs" >> RELEASE_NOTES.md
+        echo "- View service logs with customizable output" >> RELEASE_NOTES.md
+        echo "- Stream logs in real-time" >> RELEASE_NOTES.md
+        echo "- Monitor deployment status and history" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "### 🔐 Authentication" >> RELEASE_NOTES.md
+        echo "- Secure API key management" >> RELEASE_NOTES.md
+        echo "- Multiple authentication methods" >> RELEASE_NOTES.md
+        echo "- User information and session management" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "## Installation" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "### Quick Install (Recommended)" >> RELEASE_NOTES.md
+        echo '```bash' >> RELEASE_NOTES.md
+        echo 'curl -sSL https://raw.githubusercontent.com/your-username/r4r/main/install.sh | bash' >> RELEASE_NOTES.md
+        echo '```' >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "### Using uv (Fast)" >> RELEASE_NOTES.md
+        echo '```bash' >> RELEASE_NOTES.md
+        echo 'curl -LsSf https://astral.sh/uv/install.sh | sh' >> RELEASE_NOTES.md
+        echo 'uv tool install r4r' >> RELEASE_NOTES.md
+        echo '```' >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "### Using pip (Traditional)" >> RELEASE_NOTES.md
+        echo '```bash' >> RELEASE_NOTES.md
+        echo 'pip install r4r' >> RELEASE_NOTES.md
+        echo '```' >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "### From URL (Python)" >> RELEASE_NOTES.md
+        echo '```bash' >> RELEASE_NOTES.md
+        echo 'python3 <(curl -sSL https://raw.githubusercontent.com/your-username/r4r/main/install-url.py)' >> RELEASE_NOTES.md
+        echo '```' >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "## Quick Start" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo '```bash' >> RELEASE_NOTES.md
+        echo '# 1. Login with your Render API key' >> RELEASE_NOTES.md
+        echo 'r4r login' >> RELEASE_NOTES.md
+        echo '' >> RELEASE_NOTES.md
+        echo '# 2. List your services' >> RELEASE_NOTES.md
+        echo 'r4r list --detailed' >> RELEASE_NOTES.md
+        echo '' >> RELEASE_NOTES.md
+        echo '# 3. Deploy a service' >> RELEASE_NOTES.md
+        echo 'r4r deploy myapp' >> RELEASE_NOTES.md
+        echo '' >> RELEASE_NOTES.md
+        echo '# 4. View logs' >> RELEASE_NOTES.md
+        echo 'r4r logs myapp' >> RELEASE_NOTES.md
+        echo '' >> RELEASE_NOTES.md
+        echo '# 5. Run a job' >> RELEASE_NOTES.md
+        echo 'r4r job myapp "npm run migrate"' >> RELEASE_NOTES.md
+        echo '```' >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "## Documentation" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "- 📚 [Full Documentation](https://github.com/your-username/r4r/blob/main/README.md)" >> RELEASE_NOTES.md
+        echo "- 🌐 [API Reference](https://docs.render.com/api)" >> RELEASE_NOTES.md
+        echo "- 🔑 [Get API Key](https://dashboard.render.com/u/settings#api-keys)" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "## Support" >> RELEASE_NOTES.md
+        echo "" >> RELEASE_NOTES.md
+        echo "- 🐛 [Report Issues](https://github.com/your-username/r4r/issues)" >> RELEASE_NOTES.md
+        echo "- 💬 [Discussions](https://github.com/your-username/r4r/discussions)" >> RELEASE_NOTES.md
+        echo "- 📖 [Documentation](https://github.com/your-username/r4r/wiki)" >> RELEASE_NOTES.md
+        
+        # Output the content for GitHub
+        echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+        cat RELEASE_NOTES.md >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.get_version.outputs.tag }}
+        name: Release ${{ steps.get_version.outputs.tag }}
+        body: ${{ steps.release_notes.outputs.release_notes }}
+        files: |
+          dist/*
+          install.sh
+          install-pip.sh
+          install-url.py
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Upload to PyPI
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+      run: |
+        if [ -z "$TWINE_PASSWORD" ]; then
+          echo "⚠️ PYPI_TOKEN not set, skipping PyPI upload"
+          echo "To enable PyPI uploads, add your PyPI token as a secret named PYPI_TOKEN"
+        else
+          echo "📦 Uploading to PyPI..."
+          uv run twine upload dist/* --non-interactive
+          echo "✅ Successfully uploaded to PyPI"
+        fi
+    
+    - name: Update installation badge
+      run: |
+        echo "✅ Release ${{ steps.get_version.outputs.tag }} created successfully!"
+        echo ""
+        echo "📦 Distribution files:"
+        ls -la dist/
+        echo ""
+        echo "🔗 Installation commands:"
+        echo "  uv tool install r4r"
+        echo "  pip install r4r"
+        echo ""
+        echo "🎉 Release is now available at:"
+        echo "  https://github.com/${{ github.repository }}/releases/tag/${{ steps.get_version.outputs.tag }}"
+        
+        # Check if PyPI upload was successful
+        if [ ! -z "${{ secrets.PYPI_TOKEN }}" ]; then
+          echo "  https://pypi.org/project/r4r/${{ steps.get_version.outputs.version }}/"
+        fi

@@ -23,6 +23,15 @@ import typer
 from typer import Option, Argument
 import yaml
 
+# Import our log management modules
+try:
+    from .log_manager import LogManager, LogLevel, LogStream, LogStreamOverride
+    from .tui import launch_log_viewer, launch_log_viewer_with_service
+except ImportError:
+    # Fallback for direct execution
+    from log_manager import LogManager, LogLevel, LogStream, LogStreamOverride
+    from tui import launch_log_viewer, launch_log_viewer_with_service
+
 app = typer.Typer(
     name="r4r",
     help="🚀 r4r - Super easy Render CLI with cache clearing",
@@ -171,6 +180,10 @@ class RenderAPI:
         """Get deployment logs"""
         response = self.session.get(f"{API_BASE_URL}/services/{service_id}/deploys/{deploy_id}/logs")
         return self._handle_response(response)
+    
+    def get_log_manager(self) -> LogManager:
+        """Get a LogManager instance"""
+        return LogManager(self.api_key)
 
 
 @app.command("login")
@@ -405,13 +418,222 @@ def service_info(service: str = Argument(..., help="Service name or ID")):
         console.print(table)
 
 
+@app.command("log-streams")
+def manage_log_streams(
+    action: str = Argument(..., help="Action: list, create, update, delete"),
+    stream_id: str = Option(None, "--id", help="Stream ID (for update/delete operations)"),
+    name: str = Option(None, "--name", help="Stream name"),
+    service_id: str = Option(None, "--service", help="Service ID"),
+    level_filter: str = Option(None, "--level", help="Log level filter (debug, info, warn, error)"),
+    enabled: bool = Option(True, "--enabled/--disabled", help="Enable or disable stream")
+):
+    """Manage log streams (create, list, update, delete)"""
+    api = RenderAPI()
+    log_manager = api.get_log_manager()
+    
+    try:
+        if action == "list":
+            streams = log_manager.api.list_log_streams(service_id)
+            
+            if not streams:
+                console.print("No log streams found", style="yellow")
+                return
+            
+            table = Table(title=f"Log Streams ({len(streams)})")
+            table.add_column("ID", style="cyan", width=20)
+            table.add_column("Name", style="green", width=25)
+            table.add_column("Service", style="blue", width=20)
+            table.add_column("Filters", style="magenta", width=30)
+            table.add_column("Status", style="yellow", width=10)
+            table.add_column("Created", style="dim", width=12)
+            
+            for stream in streams:
+                filters_str = ", ".join([f"{k}:{v}" for k, v in stream.filters.items()])
+                status = "✅ Enabled" if stream.enabled else "❌ Disabled"
+                
+                table.add_row(
+                    stream.id[:18] + "...",
+                    stream.name,
+                    stream.service_id[:18] + "...",
+                    filters_str[:28] + "..." if len(filters_str) > 28 else filters_str,
+                    status,
+                    stream.created_at[:10]
+                )
+            
+            console.print(table)
+        
+        elif action == "create":
+            if not name or not service_id:
+                console.print("❌ --name and --service are required for creating streams", style="red")
+                raise typer.Exit(1)
+            
+            # Build filters
+            filters = {}
+            if level_filter:
+                try:
+                    LogLevel(level_filter.lower())  # Validate level
+                    filters["level"] = level_filter.lower()
+                except ValueError:
+                    console.print(f"⚠️  Invalid log level '{level_filter}'", style="yellow")
+            
+            stream = log_manager.api.create_log_stream(
+                name=name,
+                service_id=service_id,
+                filters=filters,
+                enabled=enabled
+            )
+            
+            console.print(f"✅ Created log stream: {stream.name} ({stream.id})", style="green")
+        
+        elif action == "update":
+            if not stream_id:
+                console.print("❌ --id is required for updating streams", style="red")
+                raise typer.Exit(1)
+            
+            # Build update payload
+            updates = {}
+            if name:
+                updates["name"] = name
+            if level_filter:
+                try:
+                    LogLevel(level_filter.lower())  # Validate level
+                    updates["filters"] = {"level": level_filter.lower()}
+                except ValueError:
+                    console.print(f"⚠️  Invalid log level '{level_filter}'", style="yellow")
+            
+            updates["enabled"] = enabled
+            
+            stream = log_manager.api.update_log_stream(stream_id, **updates)
+            console.print(f"✅ Updated log stream: {stream.name}", style="green")
+        
+        elif action == "delete":
+            if not stream_id:
+                console.print("❌ --id is required for deleting streams", style="red")
+                raise typer.Exit(1)
+            
+            if Confirm.ask(f"Delete log stream {stream_id}?"):
+                log_manager.api.delete_log_stream(stream_id)
+                console.print(f"✅ Deleted log stream: {stream_id}", style="green")
+            else:
+                console.print("❌ Deletion cancelled", style="yellow")
+        
+        else:
+            console.print(f"❌ Unknown action: {action}", style="red")
+            console.print("Valid actions: list, create, update, delete", style="dim")
+            raise typer.Exit(1)
+    
+    except Exception as e:
+        console.print(f"❌ Log stream operation failed: {e}", style="red")
+        raise typer.Exit(1)
+
+
+@app.command("stream-overrides")
+def manage_stream_overrides(
+    action: str = Argument(..., help="Action: list, create, update, delete"),
+    stream_id: str = Option(..., "--stream", help="Log stream ID"),
+    override_id: str = Option(None, "--id", help="Override ID (for update/delete operations)"),
+    resource_id: str = Option(None, "--resource", help="Resource ID for override"),
+    overrides_json: str = Option(None, "--overrides", help="JSON string of override settings")
+):
+    """Manage log stream overrides"""
+    api = RenderAPI()
+    log_manager = api.get_log_manager()
+    
+    try:
+        if action == "list":
+            overrides = log_manager.api.list_log_stream_overrides(stream_id)
+            
+            if not overrides:
+                console.print(f"No overrides found for stream {stream_id}", style="yellow")
+                return
+            
+            table = Table(title=f"Stream Overrides for {stream_id}")
+            table.add_column("ID", style="cyan", width=20)
+            table.add_column("Resource", style="blue", width=25)
+            table.add_column("Overrides", style="magenta", width=40)
+            table.add_column("Created", style="dim", width=12)
+            
+            for override in overrides:
+                overrides_str = json.dumps(override.overrides, indent=2)[:38] + "..."
+                
+                table.add_row(
+                    override.id[:18] + "...",
+                    override.resource_id[:23] + "...",
+                    overrides_str,
+                    override.created_at[:10]
+                )
+            
+            console.print(table)
+        
+        elif action == "create":
+            if not resource_id or not overrides_json:
+                console.print("❌ --resource and --overrides are required", style="red")
+                raise typer.Exit(1)
+            
+            try:
+                overrides_data = json.loads(overrides_json)
+            except json.JSONDecodeError as e:
+                console.print(f"❌ Invalid JSON in --overrides: {e}", style="red")
+                raise typer.Exit(1)
+            
+            override = log_manager.api.create_log_stream_override(
+                stream_id=stream_id,
+                resource_id=resource_id,
+                overrides=overrides_data
+            )
+            
+            console.print(f"✅ Created override: {override.id}", style="green")
+        
+        elif action == "update":
+            if not override_id or not overrides_json:
+                console.print("❌ --id and --overrides are required for updates", style="red")
+                raise typer.Exit(1)
+            
+            try:
+                overrides_data = json.loads(overrides_json)
+            except json.JSONDecodeError as e:
+                console.print(f"❌ Invalid JSON in --overrides: {e}", style="red")
+                raise typer.Exit(1)
+            
+            override = log_manager.api.update_log_stream_override(
+                stream_id=stream_id,
+                override_id=override_id,
+                overrides=overrides_data
+            )
+            
+            console.print(f"✅ Updated override: {override.id}", style="green")
+        
+        elif action == "delete":
+            if not override_id:
+                console.print("❌ --id is required for deleting overrides", style="red")
+                raise typer.Exit(1)
+            
+            if Confirm.ask(f"Delete override {override_id}?"):
+                log_manager.api.delete_log_stream_override(stream_id, override_id)
+                console.print(f"✅ Deleted override: {override_id}", style="green")
+            else:
+                console.print("❌ Deletion cancelled", style="yellow")
+        
+        else:
+            console.print(f"❌ Unknown action: {action}", style="red")
+            console.print("Valid actions: list, create, update, delete", style="dim")
+            raise typer.Exit(1)
+    
+    except Exception as e:
+        console.print(f"❌ Stream override operation failed: {e}", style="red")
+        raise typer.Exit(1)
+
+
 @app.command("logs")
 def view_logs(
     service: str = Argument(..., help="Service name or ID"),
     lines: int = Option(100, "--lines", "-n", help="Number of log lines to show"),
-    follow: bool = Option(False, "--follow", "-f", help="Follow log output")
+    follow: bool = Option(False, "--follow", "-f", help="Follow log output"),
+    tui: bool = Option(False, "--tui", "-t", help="Open interactive TUI log viewer"),
+    level: str = Option(None, "--level", "-l", help="Filter by log level (debug, info, warn, error)"),
+    export: str = Option(None, "--export", "-e", help="Export logs to file")
 ):
-    """View service logs"""
+    """View service logs with advanced filtering and TUI support"""
     api = RenderAPI()
     
     svc = api.find_service(service)
@@ -419,40 +641,93 @@ def view_logs(
         console.print(f"❌ Service '{service}' not found", style="red")
         raise typer.Exit(1)
     
+    # If TUI mode is requested, launch the interactive viewer
+    if tui:
+        try:
+            log_manager = api.get_log_manager()
+            console.print(f"🚀 Launching TUI log viewer for {svc['name']}...", style="cyan")
+            launch_log_viewer_with_service(log_manager, svc['id'])
+            return
+        except Exception as e:
+            console.print(f"❌ Failed to launch TUI: {e}", style="red")
+            console.print("💡 Falling back to standard log view...", style="dim")
+    
     try:
-        console.print(f"📜 Fetching logs for {svc['name']}...", style="cyan")
+        log_manager = api.get_log_manager()
+        
+        # Convert level string to LogLevel enum if provided
+        log_level = None
+        if level:
+            try:
+                log_level = LogLevel(level.lower())
+            except ValueError:
+                console.print(f"⚠️  Invalid log level '{level}'. Using all levels.", style="yellow")
         
         if follow:
-            console.print("🔄 Following logs (Ctrl+C to stop)...", style="yellow")
-            # For follow mode, we would need WebSocket or polling
-            # For now, just show recent logs
-            logs_data = api.get_service_logs(svc['id'], lines)
-        else:
-            logs_data = api.get_service_logs(svc['id'], lines)
-        
-        # Display logs
-        if 'logs' in logs_data and logs_data['logs']:
-            console.print(f"\n📄 Recent logs ({len(logs_data['logs'])} entries):", style="green")
-            console.print("-" * 80)
+            console.print(f"🔄 Following logs for {svc['name']} (Ctrl+C to stop)...", style="yellow")
+            console.print("💡 Tip: Use --tui for a better interactive experience", style="dim")
             
-            for log_entry in logs_data['logs']:
-                timestamp = log_entry.get('timestamp', '')
-                message = log_entry.get('message', '')
-                level = log_entry.get('level', 'INFO')
-                
-                # Color code by log level
+            # Simple follow mode - poll for new logs
+            def log_callback(log_entry):
+                timestamp = log_entry.timestamp[:19] if log_entry.timestamp else "Unknown"
                 level_colors = {
-                    'ERROR': 'red',
-                    'WARN': 'yellow', 
-                    'WARNING': 'yellow',
-                    'INFO': 'green',
-                    'DEBUG': 'dim'
+                    'error': 'red',
+                    'warn': 'yellow',
+                    'warning': 'yellow', 
+                    'info': 'green',
+                    'debug': 'dim'
                 }
-                level_color = level_colors.get(level.upper(), 'white')
-                
-                console.print(f"[{timestamp}] [{level}] {message}", style=level_color)
+                level_color = level_colors.get(log_entry.level.lower(), 'white')
+                console.print(f"[{timestamp}] [{log_entry.level.upper()}] {log_entry.message}", style=level_color)
+            
+            try:
+                log_manager.stream_logs_sync([svc['id']], log_callback)
+            except KeyboardInterrupt:
+                console.print("\n👋 Log streaming stopped", style="yellow")
         else:
-            console.print("⚠️  No logs found or logs not available", style="yellow")
+            console.print(f"📜 Fetching recent logs for {svc['name']}...", style="cyan")
+            
+            # Get recent logs
+            recent_logs = log_manager.get_recent_logs(
+                resource_ids=[svc['id']],
+                hours=1  # Last hour by default
+            )
+            
+            # Apply level filter if specified
+            if log_level:
+                recent_logs = [log for log in recent_logs if log.level.lower() == log_level.value]
+            
+            # Apply lines limit
+            recent_logs = recent_logs[-lines:] if len(recent_logs) > lines else recent_logs
+            
+            if recent_logs:
+                console.print(f"\n📄 Recent logs ({len(recent_logs)} entries):", style="green")
+                console.print("-" * 80)
+                
+                for log_entry in recent_logs:
+                    timestamp = log_entry.timestamp[:19] if log_entry.timestamp else "Unknown"
+                    level_colors = {
+                        'error': 'red',
+                        'warn': 'yellow',
+                        'warning': 'yellow',
+                        'info': 'green', 
+                        'debug': 'dim'
+                    }
+                    level_color = level_colors.get(log_entry.level.lower(), 'white')
+                    console.print(f"[{timestamp}] [{log_entry.level.upper()}] {log_entry.message}", style=level_color)
+                
+                # Export logs if requested
+                if export:
+                    try:
+                        with open(export, 'w') as f:
+                            for log_entry in recent_logs:
+                                f.write(f"[{log_entry.timestamp}] [{log_entry.level.upper()}] {log_entry.message}\n")
+                        console.print(f"✅ Logs exported to {export}", style="green")
+                    except Exception as e:
+                        console.print(f"❌ Failed to export logs: {e}", style="red")
+            else:
+                console.print("⚠️  No logs found or logs not available", style="yellow")
+                console.print("💡 Try increasing the time range or check service status", style="dim")
             
     except Exception as e:
         console.print(f"❌ Failed to fetch logs: {e}", style="red")
@@ -667,9 +942,71 @@ def job_status(job_id: str = Argument(..., help="Job ID")):
         raise typer.Exit(1)
 
 
+@app.command("tui")
+def launch_tui(
+    service: str = Option(None, "--service", "-s", help="Service name or ID to focus on"),
+    resources: List[str] = Option(None, "--resources", "-r", help="Specific resource IDs to monitor")
+):
+    """Launch interactive TUI for advanced log management"""
+    api = RenderAPI()
+    log_manager = api.get_log_manager()
+    
+    try:
+        if service:
+            # Focus on specific service
+            svc = api.find_service(service)
+            if not svc:
+                console.print(f"❌ Service '{service}' not found", style="red")
+                raise typer.Exit(1)
+            
+            console.print(f"🚀 Launching TUI for service: {svc['name']}", style="cyan")
+            launch_log_viewer_with_service(log_manager, svc['id'])
+        
+        elif resources:
+            # Monitor specific resources
+            console.print(f"🚀 Launching TUI for {len(resources)} resources", style="cyan")
+            launch_log_viewer(log_manager, resources)
+        
+        else:
+            # Interactive mode - let user choose
+            console.print("🔍 Getting your services...", style="cyan")
+            services = api.list_services()
+            
+            if not services:
+                console.print("❌ No services found", style="red")
+                raise typer.Exit(1)
+            
+            # Show service selection
+            console.print("\n📋 Available services:", style="green")
+            for i, service in enumerate(services[:10], 1):  # Show first 10
+                status = "🟢" if service.get('suspended') == 'not_suspended' else "🔴"
+                console.print(f"  {i}. {status} {service['name']} ({service['type']})")
+            
+            if len(services) > 10:
+                console.print(f"  ... and {len(services) - 10} more")
+            
+            try:
+                choice = int(Prompt.ask("Select service number (1-10)", default="1"))
+                if 1 <= choice <= min(10, len(services)):
+                    selected_service = services[choice - 1]
+                    console.print(f"🚀 Launching TUI for: {selected_service['name']}", style="cyan")
+                    launch_log_viewer_with_service(log_manager, selected_service['id'])
+                else:
+                    console.print("❌ Invalid selection", style="red")
+                    raise typer.Exit(1)
+            except (ValueError, KeyboardInterrupt):
+                console.print("\n👋 TUI launch cancelled", style="yellow")
+                raise typer.Exit(0)
+    
+    except Exception as e:
+        console.print(f"❌ Failed to launch TUI: {e}", style="red")
+        console.print("💡 Make sure textual is installed: pip install textual", style="dim")
+        raise typer.Exit(1)
+
+
 @app.callback()
 def main():
-    """r4r - Super easy Render CLI with advanced features"""
+    """r4r - Super easy Render CLI with advanced features and TUI log viewer"""
     pass
 
 
