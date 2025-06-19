@@ -331,7 +331,7 @@ jobs:
         echo 'pip install r4r' >> RELEASE_NOTES.md
         echo '' >> RELEASE_NOTES.md
         echo '# One-line install' >> RELEASE_NOTES.md
-        echo 'curl -sSL https://raw.githubusercontent.com/your-username/r4r/main/install.sh | bash' >> RELEASE_NOTES.md
+        echo 'curl -sSL https://raw.githubusercontent.com/porameht/r4r/main/install.sh | bash' >> RELEASE_NOTES.md
         echo '```' >> RELEASE_NOTES.md
     
     - name: Upload release notes
