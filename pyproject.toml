@@ -35,6 +35,16 @@ dependencies = [
     "websockets>=11.0.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.0.290",
+    "mypy>=1.5.0",
+    "types-requests>=2.31.0",
+    "types-PyYAML>=6.0.12",
+]
+
 [project.urls]
 Homepage = "https://github.com/porameht/r4r"
 Repository = "https://github.com/porameht/r4r.git"

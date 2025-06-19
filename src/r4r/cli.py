@@ -34,39 +34,53 @@ try:
         # TUI dependencies not available
         TUI_AVAILABLE = False
 
-        def launch_log_viewer(*args, **kwargs):
+        def launch_log_viewer(
+            render_service: "RenderService", resource_ids: List[str]
+        ) -> None:
             console.print(
                 "❌ TUI not available. Install textual: pip install textual",
                 style="red",
             )
 
-        def launch_log_viewer_with_service(*args, **kwargs):
+        def launch_log_viewer_with_service(
+            render_service: "RenderService", service_id: str
+        ) -> None:
             console.print(
                 "❌ TUI not available. Install textual: pip install textual",
                 style="red",
             )
 except ImportError:
-    # Fallback for direct execution
-    from api import RenderService
+    # Fallback for direct execution - only used when running module directly
+    import sys
 
-    try:
-        from viewer import launch_log_viewer, launch_log_viewer_with_service
+    if __name__ == "__main__":
+        try:
+            from api import RenderService  # type: ignore[no-redef]
 
-        TUI_AVAILABLE = True
-    except ImportError:
-        TUI_AVAILABLE = False
+            try:
+                from viewer import launch_log_viewer, launch_log_viewer_with_service  # type: ignore[no-redef]
 
-        def launch_log_viewer(*args, **kwargs):
-            console.print(
-                "❌ TUI not available. Install textual: pip install textual",
-                style="red",
-            )
+                TUI_AVAILABLE = True
+            except ImportError:
+                TUI_AVAILABLE = False
 
-        def launch_log_viewer_with_service(*args, **kwargs):
-            console.print(
-                "❌ TUI not available. Install textual: pip install textual",
-                style="red",
-            )
+                def launch_log_viewer(
+                    render_service: "RenderService", resource_ids: List[str]
+                ) -> None:  # type: ignore[no-redef]
+                    console.print(
+                        "❌ TUI not available. Install textual: pip install textual",
+                        style="red",
+                    )
+
+                def launch_log_viewer_with_service(
+                    render_service: "RenderService", service_id: str
+                ) -> None:  # type: ignore[no-redef]
+                    console.print(
+                        "❌ TUI not available. Install textual: pip install textual",
+                        style="red",
+                    )
+        except ImportError:
+            pass
 
 
 app = typer.Typer(
@@ -202,10 +216,11 @@ class RenderAPI:
         response = self.session.get(
             f"{API_BASE_URL}/services/{service_id}/deploys", params=params
         )
-        return self._handle_response(response)
+        data = self._handle_response(response)
+        return data.get("deploys", [])
 
     def create_job(
-        self, service_id: str, command: str, plan_id: str = None
+        self, service_id: str, command: str, plan_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Create a one-off job"""
         payload = {"serviceId": service_id, "startCommand": command}
@@ -226,7 +241,8 @@ class RenderAPI:
         response = self.session.get(
             f"{API_BASE_URL}/services/{service_id}/jobs", params=params
         )
-        return self._handle_response(response)
+        data = self._handle_response(response)
+        return data.get("jobs", [])
 
     def get_api_key_info(self) -> Dict[str, Any]:
         """Get information about the current API key"""
@@ -239,7 +255,7 @@ class RenderAPI:
         """Get service logs"""
         params = {"lines": lines}
         if follow:
-            params["follow"] = "true"
+            params["follow"] = True
         response = self.session.get(
             f"{API_BASE_URL}/services/{service_id}/logs", params=params
         )
@@ -256,7 +272,10 @@ class RenderAPI:
         """Get a RenderService instance"""
         from .config import Config
 
-        return RenderService(Config(api_key=self.api_key))
+        api_key = self.api_key
+        if api_key is None:
+            raise ValueError("API key is required")
+        return RenderService(Config(api_key=api_key))
 
 
 @app.command("login")
@@ -609,20 +628,22 @@ def manage_log_streams(
                 raise typer.Exit(1)
 
             # Build update payload
-            updates = {}
+            updates: Dict[str, Any] = {}
             if name:
                 updates["name"] = name
             if level_filter:
                 # Validate level
                 valid_levels = ["debug", "info", "warn", "error", "fatal"]
                 if level_filter.lower() in valid_levels:
-                    updates["filters"] = {"level": level_filter.lower()}
+                    filters = {"level": level_filter.lower()}
+                    updates["filters"] = filters
                 else:
                     console.print(
                         f"⚠️  Invalid log level '{level_filter}'", style="yellow"
                     )
 
-            updates["enabled"] = enabled
+            if enabled is not None:
+                updates["enabled"] = enabled
 
             stream = render_service.api.update_log_stream(stream_id, **updates)
             console.print(f"✅ Updated log stream: {stream.name}", style="green")
@@ -1010,7 +1031,10 @@ def create_job(
                 "succeeded": "✅ Succeeded",
                 "failed": "❌ Failed",
                 "canceled": "⚪ Canceled",
-            }.get(final_status.get("status"), f"❓ {final_status.get('status')}")
+            }.get(
+                final_status.get("status", "unknown"),
+                f"❓ {final_status.get('status', 'unknown')}",
+            )
 
             console.print(
                 f"Job completed: {status_icon}",
@@ -1151,9 +1175,10 @@ def launch_tui(
 
             # Show service selection
             console.print("\n📋 Available services:", style="green")
-            for i, service in enumerate(services[:10], 1):  # Show first 10
-                status = "🟢" if service.get("suspended") == "not_suspended" else "🔴"
-                console.print(f"  {i}. {status} {service['name']} ({service['type']})")
+            for i, svc in enumerate(services[:10], 1):  # Show first 10
+                # services is List[Dict[str, Any]] from RenderAPI.list_services()
+                status = "🟢" if svc.get("suspended") == "not_suspended" else "🔴"
+                console.print(f"  {i}. {status} {svc['name']} ({svc['type']})")
 
             if len(services) > 10:
                 console.print(f"  ... and {len(services) - 10} more")
@@ -1162,12 +1187,13 @@ def launch_tui(
                 choice = int(Prompt.ask("Select service number (1-10)", default="1"))
                 if 1 <= choice <= min(10, len(services)):
                     selected_service = services[choice - 1]
+                    # selected_service is Dict[str, Any] from RenderAPI.list_services()
                     console.print(
                         f"🚀 Launching TUI for: {selected_service['name']}",
                         style="cyan",
                     )
                     launch_log_viewer_with_service(
-                        render_service, selected_service["id"]
+                        render_service, selected_service.get("id", "")
                     )
                 else:
                     console.print("❌ Invalid selection", style="red")

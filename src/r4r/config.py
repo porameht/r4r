@@ -51,7 +51,7 @@ class Config:
 class APIError(Exception):
     """Custom API error with status code"""
 
-    def __init__(self, message: str, status_code: int = None):
+    def __init__(self, message: str, status_code: Optional[int] = None):
         self.message = message
         self.status_code = status_code
         super().__init__(message)
@@ -90,19 +90,25 @@ class HTTPClient:
         except (ValueError, KeyError):
             return f"HTTP {response.status_code}: {response.reason}"
 
-    def get(self, endpoint: str, params: Dict[str, Any] = None) -> Dict[str, Any]:
+    def get(
+        self, endpoint: str, params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """GET request"""
         url = f"{self.config.base_url}/{endpoint.lstrip('/')}"
         response = self.session.get(url, params=params)
         return self._handle_response(response)
 
-    def post(self, endpoint: str, data: Dict[str, Any] = None) -> Dict[str, Any]:
+    def post(
+        self, endpoint: str, data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """POST request"""
         url = f"{self.config.base_url}/{endpoint.lstrip('/')}"
         response = self.session.post(url, json=data)
         return self._handle_response(response)
 
-    def put(self, endpoint: str, data: Dict[str, Any] = None) -> Dict[str, Any]:
+    def put(
+        self, endpoint: str, data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """PUT request"""
         url = f"{self.config.base_url}/{endpoint.lstrip('/')}"
         response = self.session.put(url, json=data)
@@ -150,7 +156,7 @@ def get_status_icon(status: str) -> str:
 class ConfigManager:
     """Manage application configuration and credentials"""
 
-    def __init__(self, config_dir: Path = None):
+    def __init__(self, config_dir: Optional[Path] = None):
         self.config_dir = config_dir or Path.home() / ".r4r"
         self.config_file = self.config_dir / "config.json"
 

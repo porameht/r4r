@@ -213,7 +213,7 @@ class RenderAPI:
         environment_variables: Optional[Dict[str, str]] = None,
     ) -> Service:
         """Create a new service"""
-        payload = {
+        payload: Dict[str, Any] = {
             "name": name,
             "type": service_type.value,
             "repo": repo_url,
@@ -291,7 +291,7 @@ class RenderAPI:
         return Deploy.from_dict(data)
 
     # Log Stream Methods (placeholder implementations)
-    def list_log_streams(self, service_id: str = None) -> List[LogStream]:
+    def list_log_streams(self, service_id: Optional[str] = None) -> List[LogStream]:
         """List log streams - placeholder implementation"""
         return []
 
@@ -358,6 +358,13 @@ class RenderAPI:
     def delete_log_stream_override(self, stream_id: str, override_id: str) -> bool:
         """Delete log stream override - placeholder implementation"""
         return True
+
+    async def subscribe_to_logs(self, resource_ids: List[str]):
+        """Subscribe to real-time logs - placeholder implementation"""
+        # This is a placeholder for real log streaming
+        # In a real implementation, this would connect to a WebSocket or SSE stream
+        yield  # Make this an async generator
+        return
 
 
 class RenderService:

@@ -6,7 +6,7 @@ Interactive log viewer with real-time streaming capabilities
 
 import asyncio
 from datetime import datetime
-from typing import List
+from typing import Any, Dict, List
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -152,7 +152,7 @@ class LogViewerApp(App):
         self.following = False
         self.log_count = 0
         self.filtered_count = 0
-        self.current_filters = {}
+        self.current_filters: Dict[str, Any] = {}
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -183,7 +183,6 @@ class LogViewerApp(App):
                         yield Log(
                             id="log-display",
                             highlight=True,
-                            markup=True,
                             auto_scroll=True,
                             max_lines=10000,
                         )
@@ -192,7 +191,7 @@ class LogViewerApp(App):
                         yield DataTable(id="streams-detail-table")
 
                     with TabPane("Statistics", id="stats-tab"):
-                        yield Pretty(id="stats-display")
+                        yield Pretty({}, id="stats-display")
 
         # Status bar
         with Horizontal(classes="status-bar"):
@@ -457,7 +456,7 @@ class LogViewerApp(App):
         self._show_error("Stream creation not yet implemented")
 
     # Action methods
-    def action_quit(self) -> None:
+    async def action_quit(self) -> None:
         """Quit the application"""
         self._stop_log_streaming()
         self.exit()
