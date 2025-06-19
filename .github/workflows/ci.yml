@@ -32,7 +32,6 @@ jobs:
     - name: Install dependencies
       run: |
         uv sync --dev
-        uv add --dev pytest pytest-cov ruff mypy
     
     - name: Run linting
       run: |
@@ -75,7 +74,6 @@ jobs:
     - name: Install build dependencies
       run: |
         uv sync --dev
-        uv add --dev build twine
     
     - name: Build distribution
       run: |
