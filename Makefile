@@ -46,36 +46,33 @@ dev: install
 # Testing
 test:
 	@echo "🧪 Running tests..."
-	@mkdir -p tests
-	@if [ ! -f tests/test_basic.py ]; then \
-		echo "Creating basic tests..."; \
-		cat > tests/test_basic.py << 'EOF'; \
-"""Basic tests for r4r CLI"""; \
-import subprocess; \
-import sys; \
-def test_import():; \
-    try:; \
-        import r4r.cli; \
-        assert True; \
-    except ImportError:; \
-        assert False, "Failed to import r4r.cli"; \
-def test_cli_help():; \
-    try:; \
-        result = subprocess.run([sys.executable, "-m", "r4r.cli", "--help"], capture_output=True, text=True, timeout=10); \
-        assert "r4r - Super easy Render CLI" in result.stdout; \
-    except Exception as e:; \
-        assert False, f"CLI help test failed: {e}"; \
-if __name__ == "__main__":; \
-    test_import(); \
-    test_cli_help(); \
-    print("✅ All tests passed!"); \
-EOF; \
-	fi
 	@if uv run python -c "import pytest" 2>/dev/null; then \
-		uv run pytest tests/ -v; \
+		uv run python run_tests.py; \
 	else \
-		uv run python tests/test_basic.py; \
+		echo "⚠️ pytest not installed, installing..."; \
+		uv pip install pytest pytest-cov; \
+		uv run python run_tests.py; \
 	fi
+
+# Unit tests only
+test-unit:
+	@echo "🧪 Running unit tests..."
+	@uv run python run_tests.py --unit
+
+# Integration tests only
+test-integration:
+	@echo "🧪 Running integration tests..."
+	@uv run python run_tests.py --integration
+
+# Test with coverage
+test-coverage:
+	@echo "📊 Running tests with coverage..."
+	@uv run python run_tests.py --coverage
+
+# Verbose test output
+test-verbose:
+	@echo "🧪 Running tests (verbose)..."
+	@uv run python run_tests.py -v
 
 # Linting
 lint:

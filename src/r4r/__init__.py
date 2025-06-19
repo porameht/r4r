@@ -1,16 +1,21 @@
-"""r4r - Super easy Render CLI with advanced features and TUI log viewer."""
+"""r4r - Super easy Render CLI with clean architecture and modern design."""
 
 __version__ = "0.2.0"
 
 # Export main components
 from .cli import app
-from .log_manager import LogManager, LogLevel, LogEntry, LogStream, LogStreamOverride
+from .config import Config, ServiceType, ServiceStatus
+from .api import RenderService, Service, Deploy, Event
+from .commands import RenderCLI
 
 __all__ = [
     "app",
-    "LogManager", 
-    "LogLevel",
-    "LogEntry",
-    "LogStream", 
-    "LogStreamOverride"
+    "Config",
+    "ServiceType", 
+    "ServiceStatus",
+    "RenderService",
+    "RenderCLI",
+    "Service",
+    "Deploy",
+    "Event"
 ]

@@ -21,7 +21,7 @@ from rich.text import Text
 from rich.console import Console
 from rich.syntax import Syntax
 
-from .log_manager import LogManager, LogEntry, LogStream, LogLevel, LogStreamOverride
+from .api import RenderService, LogEntry, LogStream, LogLevel, LogStreamOverride
 
 class LogFilterPanel(Static):
     """Panel for configuring log filters"""
@@ -139,9 +139,9 @@ class LogViewerApp(App):
         Binding("ctrl+f", "focus_search", "Search"),
     ]
     
-    def __init__(self, log_manager: LogManager, resource_ids: List[str]):
+    def __init__(self, render_service: RenderService, resource_ids: List[str]):
         super().__init__()
-        self.log_manager = log_manager
+        self.render_service = render_service
         self.resource_ids = resource_ids
         self.following = False
         self.log_count = 0
@@ -223,7 +223,7 @@ class LogViewerApp(App):
     def _load_recent_logs(self) -> None:
         """Load recent logs to populate the display"""
         try:
-            recent_logs = self.log_manager.get_recent_logs(
+            recent_logs = self.render_service.get_recent_logs(
                 resource_ids=self.resource_ids,
                 hours=1
             )
@@ -242,7 +242,7 @@ class LogViewerApp(App):
     def _load_log_streams(self) -> None:
         """Load log streams data"""
         try:
-            streams = self.log_manager.api.list_log_streams()
+            streams = self.render_service.api.list_log_streams()
             
             # Update main streams table
             table = self.query_one("#streams-table", DataTable)
@@ -350,7 +350,7 @@ class LogViewerApp(App):
         log_widget = self.query_one("#log-display", Log)
         
         try:
-            async for log_entry in self.log_manager.api.subscribe_to_logs(self.resource_ids):
+            async for log_entry in self.render_service.api.subscribe_to_logs(self.resource_ids):
                 if not self.following:
                     break
                     
@@ -471,13 +471,13 @@ class LogViewerApp(App):
         self.query_one("#search-filter", Input).focus()
 
 # Helper functions for launching TUI
-def launch_log_viewer(log_manager: LogManager, resource_ids: List[str]) -> None:
+def launch_log_viewer(render_service: RenderService, resource_ids: List[str]) -> None:
     """Launch the TUI log viewer"""
-    app = LogViewerApp(log_manager, resource_ids)
+    app = LogViewerApp(render_service, resource_ids)
     app.run()
 
-def launch_log_viewer_with_service(log_manager: LogManager, service_id: str) -> None:
+def launch_log_viewer_with_service(render_service: RenderService, service_id: str) -> None:
     """Launch log viewer for a specific service"""
     # For now, use service_id as resource_id
     # In a real implementation, you'd fetch the actual resource IDs for the service
-    launch_log_viewer(log_manager, [service_id])
+    launch_log_viewer(render_service, [service_id])

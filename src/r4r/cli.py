@@ -23,14 +23,31 @@ import typer
 from typer import Option, Argument
 import yaml
 
-# Import our log management modules
+# Import our modules
 try:
-    from .log_manager import LogManager, LogLevel, LogStream, LogStreamOverride
-    from .tui import launch_log_viewer, launch_log_viewer_with_service
+    from .api import RenderService, LogLevel, LogStream, LogStreamOverride
+    try:
+        from .viewer import launch_log_viewer, launch_log_viewer_with_service
+        TUI_AVAILABLE = True
+    except ImportError:
+        # TUI dependencies not available
+        TUI_AVAILABLE = False
+        def launch_log_viewer(*args, **kwargs):
+            console.print("❌ TUI not available. Install textual: pip install textual", style="red")
+        def launch_log_viewer_with_service(*args, **kwargs):
+            console.print("❌ TUI not available. Install textual: pip install textual", style="red")
 except ImportError:
     # Fallback for direct execution
-    from log_manager import LogManager, LogLevel, LogStream, LogStreamOverride
-    from tui import launch_log_viewer, launch_log_viewer_with_service
+    from api import RenderService, LogLevel, LogStream, LogStreamOverride
+    try:
+        from viewer import launch_log_viewer, launch_log_viewer_with_service
+        TUI_AVAILABLE = True
+    except ImportError:
+        TUI_AVAILABLE = False
+        def launch_log_viewer(*args, **kwargs):
+            console.print("❌ TUI not available. Install textual: pip install textual", style="red")
+        def launch_log_viewer_with_service(*args, **kwargs):
+            console.print("❌ TUI not available. Install textual: pip install textual", style="red")
 
 app = typer.Typer(
     name="r4r",
@@ -181,9 +198,10 @@ class RenderAPI:
         response = self.session.get(f"{API_BASE_URL}/services/{service_id}/deploys/{deploy_id}/logs")
         return self._handle_response(response)
     
-    def get_log_manager(self) -> LogManager:
-        """Get a LogManager instance"""
-        return LogManager(self.api_key)
+    def get_render_service(self) -> RenderService:
+        """Get a RenderService instance"""
+        from .config import Config
+        return RenderService(Config(api_key=self.api_key))
 
 
 @app.command("login")
@@ -429,11 +447,11 @@ def manage_log_streams(
 ):
     """Manage log streams (create, list, update, delete)"""
     api = RenderAPI()
-    log_manager = api.get_log_manager()
+    render_service = api.get_render_service()
     
     try:
         if action == "list":
-            streams = log_manager.api.list_log_streams(service_id)
+            streams = render_service.api.list_log_streams(service_id)
             
             if not streams:
                 console.print("No log streams found", style="yellow")
@@ -476,7 +494,7 @@ def manage_log_streams(
                 except ValueError:
                     console.print(f"⚠️  Invalid log level '{level_filter}'", style="yellow")
             
-            stream = log_manager.api.create_log_stream(
+            stream = render_service.api.create_log_stream(
                 name=name,
                 service_id=service_id,
                 filters=filters,
@@ -503,7 +521,7 @@ def manage_log_streams(
             
             updates["enabled"] = enabled
             
-            stream = log_manager.api.update_log_stream(stream_id, **updates)
+            stream = render_service.api.update_log_stream(stream_id, **updates)
             console.print(f"✅ Updated log stream: {stream.name}", style="green")
         
         elif action == "delete":
@@ -512,7 +530,7 @@ def manage_log_streams(
                 raise typer.Exit(1)
             
             if Confirm.ask(f"Delete log stream {stream_id}?"):
-                log_manager.api.delete_log_stream(stream_id)
+                render_service.api.delete_log_stream(stream_id)
                 console.print(f"✅ Deleted log stream: {stream_id}", style="green")
             else:
                 console.print("❌ Deletion cancelled", style="yellow")
@@ -537,11 +555,11 @@ def manage_stream_overrides(
 ):
     """Manage log stream overrides"""
     api = RenderAPI()
-    log_manager = api.get_log_manager()
+    render_service = api.get_render_service()
     
     try:
         if action == "list":
-            overrides = log_manager.api.list_log_stream_overrides(stream_id)
+            overrides = render_service.api.list_log_stream_overrides(stream_id)
             
             if not overrides:
                 console.print(f"No overrides found for stream {stream_id}", style="yellow")
@@ -576,7 +594,7 @@ def manage_stream_overrides(
                 console.print(f"❌ Invalid JSON in --overrides: {e}", style="red")
                 raise typer.Exit(1)
             
-            override = log_manager.api.create_log_stream_override(
+            override = render_service.api.create_log_stream_override(
                 stream_id=stream_id,
                 resource_id=resource_id,
                 overrides=overrides_data
@@ -595,7 +613,7 @@ def manage_stream_overrides(
                 console.print(f"❌ Invalid JSON in --overrides: {e}", style="red")
                 raise typer.Exit(1)
             
-            override = log_manager.api.update_log_stream_override(
+            override = render_service.api.update_log_stream_override(
                 stream_id=stream_id,
                 override_id=override_id,
                 overrides=overrides_data
@@ -609,7 +627,7 @@ def manage_stream_overrides(
                 raise typer.Exit(1)
             
             if Confirm.ask(f"Delete override {override_id}?"):
-                log_manager.api.delete_log_stream_override(stream_id, override_id)
+                render_service.api.delete_log_stream_override(stream_id, override_id)
                 console.print(f"✅ Deleted override: {override_id}", style="green")
             else:
                 console.print("❌ Deletion cancelled", style="yellow")
@@ -644,16 +662,16 @@ def view_logs(
     # If TUI mode is requested, launch the interactive viewer
     if tui:
         try:
-            log_manager = api.get_log_manager()
+            render_service = api.get_render_service()
             console.print(f"🚀 Launching TUI log viewer for {svc['name']}...", style="cyan")
-            launch_log_viewer_with_service(log_manager, svc['id'])
+            launch_log_viewer_with_service(render_service, svc['id'])
             return
         except Exception as e:
             console.print(f"❌ Failed to launch TUI: {e}", style="red")
             console.print("💡 Falling back to standard log view...", style="dim")
     
     try:
-        log_manager = api.get_log_manager()
+        render_service = api.get_render_service()
         
         # Convert level string to LogLevel enum if provided
         log_level = None
@@ -681,14 +699,14 @@ def view_logs(
                 console.print(f"[{timestamp}] [{log_entry.level.upper()}] {log_entry.message}", style=level_color)
             
             try:
-                log_manager.stream_logs_sync([svc['id']], log_callback)
+                render_service.stream_logs_sync([svc['id']], log_callback)
             except KeyboardInterrupt:
                 console.print("\n👋 Log streaming stopped", style="yellow")
         else:
             console.print(f"📜 Fetching recent logs for {svc['name']}...", style="cyan")
             
             # Get recent logs
-            recent_logs = log_manager.get_recent_logs(
+            recent_logs = render_service.get_recent_logs(
                 resource_ids=[svc['id']],
                 hours=1  # Last hour by default
             )
@@ -949,7 +967,7 @@ def launch_tui(
 ):
     """Launch interactive TUI for advanced log management"""
     api = RenderAPI()
-    log_manager = api.get_log_manager()
+    render_service = api.get_render_service()
     
     try:
         if service:
@@ -960,12 +978,12 @@ def launch_tui(
                 raise typer.Exit(1)
             
             console.print(f"🚀 Launching TUI for service: {svc['name']}", style="cyan")
-            launch_log_viewer_with_service(log_manager, svc['id'])
+            launch_log_viewer_with_service(render_service, svc['id'])
         
         elif resources:
             # Monitor specific resources
             console.print(f"🚀 Launching TUI for {len(resources)} resources", style="cyan")
-            launch_log_viewer(log_manager, resources)
+            launch_log_viewer(render_service, resources)
         
         else:
             # Interactive mode - let user choose
@@ -990,7 +1008,7 @@ def launch_tui(
                 if 1 <= choice <= min(10, len(services)):
                     selected_service = services[choice - 1]
                     console.print(f"🚀 Launching TUI for: {selected_service['name']}", style="cyan")
-                    launch_log_viewer_with_service(log_manager, selected_service['id'])
+                    launch_log_viewer_with_service(render_service, selected_service['id'])
                 else:
                     console.print("❌ Invalid selection", style="red")
                     raise typer.Exit(1)
