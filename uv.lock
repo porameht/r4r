@@ -1133,6 +1133,13 @@ dev = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "mypy", version = "1.14.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
+    { name = "mypy", version = "1.16.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
+    { name = "pytest", version = "8.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
+    { name = "pytest", version = "8.4.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
+    { name = "pytest-cov", version = "5.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
+    { name = "pytest-cov", version = "6.2.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
+    { name = "ruff" },
     { name = "types-pyyaml", version = "6.0.12.20241230", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "types-pyyaml", version = "6.0.12.20250516", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
     { name = "types-requests", version = "2.32.0.20241016", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
@@ -1158,6 +1165,10 @@ provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "mypy", specifier = ">=1.14.1" },
+    { name = "pytest", specifier = ">=8.3.5" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+    { name = "ruff", specifier = ">=0.12.0" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20241230" },
     { name = "types-requests", specifier = ">=2.32.0.20241016" },
 ]
