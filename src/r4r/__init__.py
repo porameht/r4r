@@ -3,19 +3,19 @@
 __version__ = "0.2.0"
 
 # Export main components
+from .api import Deploy, Event, RenderService, Service
 from .cli import app
-from .config import Config, ServiceType, ServiceStatus
-from .api import RenderService, Service, Deploy, Event
 from .commands import RenderCLI
+from .config import Config, ServiceStatus, ServiceType
 
 __all__ = [
-    "app",
     "Config",
-    "ServiceType", 
-    "ServiceStatus",
-    "RenderService",
-    "RenderCLI",
-    "Service",
     "Deploy",
-    "Event"
+    "Event",
+    "RenderCLI",
+    "RenderService",
+    "Service",
+    "ServiceStatus",
+    "ServiceType",
+    "app",
 ]
