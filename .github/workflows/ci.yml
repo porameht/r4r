@@ -93,6 +93,7 @@ jobs:
         else
           uv run python tests/test_basic.py
         fi
+      shell: bash
     
     - name: Test CLI installation
       run: |
