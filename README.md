@@ -17,10 +17,10 @@
 
 ```bash
 # One-line installation
-curl -sSL https://raw.githubusercontent.com/your-username/r4r/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/porameht/r4r/main/install.sh | bash
 
 # Or with wget
-wget -qO- https://raw.githubusercontent.com/your-username/r4r/main/install.sh | bash
+wget -qO- https://raw.githubusercontent.com/porameht/r4r/main/install.sh | bash
 ```
 
 ## Manual Install
@@ -195,7 +195,7 @@ You can retrieve and manage your API key through multiple methods:
 
 ```bash
 # Clone the repo
-git clone https://github.com/your-username/r4r.git
+git clone https://github.com/porameht/r4r.git
 cd r4r
 
 # Install in development mode
@@ -221,7 +221,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## Support
 
 If you encounter any issues or have questions:
-- Create an issue on [GitHub](https://github.com/your-username/r4r/issues)
+- Create an issue on [GitHub](https://github.com/porameht/r4r/issues)
 - Check the documentation
 - Make sure your API key has the correct permissions
 

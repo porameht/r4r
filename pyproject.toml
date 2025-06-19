@@ -36,9 +36,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-username/r4r"
-Repository = "https://github.com/your-username/r4r.git"
-Issues = "https://github.com/your-username/r4r/issues"
+Homepage = "https://github.com/porameht/r4r"
+Repository = "https://github.com/porameht/r4r.git"
+Issues = "https://github.com/porameht/r4r/issues"
 
 [project.scripts]
 r4r = "r4r.cli:app"
