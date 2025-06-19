@@ -13,6 +13,9 @@ jobs:
   create-release:
     name: Create Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     
     steps:
     - uses: actions/checkout@v4
@@ -179,7 +182,7 @@ jobs:
         echo "EOF" >> $GITHUB_OUTPUT
     
     - name: Create GitHub Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.get_version.outputs.tag }}
         name: Release ${{ steps.get_version.outputs.tag }}
@@ -190,7 +193,8 @@ jobs:
           install-pip.sh
           install-url.py
         draft: false
-        prerelease: false
+        prerelease: ${{ contains(steps.get_version.outputs.tag, 'rc') || contains(steps.get_version.outputs.tag, 'alpha') || contains(steps.get_version.outputs.tag, 'beta') }}
+        make_latest: ${{ !contains(steps.get_version.outputs.tag, 'rc') && !contains(steps.get_version.outputs.tag, 'alpha') && !contains(steps.get_version.outputs.tag, 'beta') }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
