@@ -87,10 +87,13 @@ jobs:
           echo "- Initial release" >> RELEASE_NOTES.md
         fi
         
-        # Output the content for GitHub
-        echo "release_notes<<EOF" >> $GITHUB_OUTPUT
-        cat RELEASE_NOTES.md >> $GITHUB_OUTPUT
-        echo "EOF" >> $GITHUB_OUTPUT
+        # Output the content for GitHub using a unique delimiter
+        delimiter=$(openssl rand -hex 8)
+        {
+          echo "release_notes<<${delimiter}"
+          cat RELEASE_NOTES.md
+          echo "${delimiter}"
+        } >> $GITHUB_OUTPUT
     
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
