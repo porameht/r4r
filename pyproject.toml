@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "r4r"
-version = "0.2.3-rc.3"
+version = "0.2.3"
 description = "Render CLI - deployments, jobs, logs, and more"
 readme = "README.md"
 license = { text = "MIT" }
