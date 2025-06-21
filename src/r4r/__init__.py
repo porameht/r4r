@@ -1,6 +1,6 @@
 """r4r - Super easy Render CLI with clean architecture and modern design."""
 
-__version__ = "0.2.5"
+__version__ = "0.2.6"
 
 # Export main components
 from .api import Deploy, Event, Job, Owner, Project, RenderService, Service

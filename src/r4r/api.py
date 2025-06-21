@@ -590,7 +590,7 @@ class RenderAPI:
     async def stream_logs_async(
         self, service_id: str, owner_id: str, lines: int = 100
     ) -> None:
-        """Stream logs via WebSocket"""
+        """Stream logs via WebSocket with automatic SSL fallback"""
         params = {
             "ownerId": owner_id,
             "resource": [service_id],
@@ -601,39 +601,69 @@ class RenderAPI:
         ws_url = f"wss://api.render.com/v1/logs/subscribe?{urllib.parse.urlencode(params, doseq=True)}"
         headers = {"Authorization": f"Bearer {self.config.api_key}"}
 
-        # Create SSL context - always needed for wss:// URLs
+        # Try connecting with SSL verification first, then fallback if needed
+        await self._connect_websocket_with_fallback(ws_url, headers)
+
+    async def _connect_websocket_with_fallback(self, ws_url: str, headers: Dict[str, str]) -> None:
+        """Connect to WebSocket with automatic SSL fallback"""
+        
+        # Attempt 1: Use configured SSL settings
         ssl_context = ssl.create_default_context()
         if not self.config.verify_ssl:
-            # Only disable SSL verification if explicitly configured
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
 
         try:
-            async with websockets.connect(
-                ws_url, additional_headers=headers, ssl=ssl_context
-            ) as websocket:
-                console.print("🔗 Connected to log stream...", style="green")
-                async for message in websocket:
-                    try:
-                        log_data = json.loads(message)
-                        self._format_log_message(log_data)
-                    except json.JSONDecodeError:
-                        # Handle potential bytes message
-                        message_str = (
-                            message
-                            if isinstance(message, str)
-                            else message.decode("utf-8")
-                        )
-                        console.print(f"Raw: {message_str}", style="dim")
+            await self._websocket_connect(ws_url, headers, ssl_context)
+            return
         except Exception as e:
-            console.print(f"❌ Connection error: {e}", style="red")
-            if "SSL" in str(e) or "certificate" in str(e).lower():
-                console.print(
-                    "💡 If you're experiencing SSL certificate issues, try:",
-                    style="yellow",
-                )
-                console.print("   export R4R_VERIFY_SSL=false", style="dim")
-                console.print("   Then run the command again", style="dim")
+            # Check if this is an SSL-related error
+            error_str = str(e).lower()
+            is_ssl_error = any(keyword in error_str for keyword in [
+                "ssl", "certificate", "verify_failed", "cert", "tls"
+            ])
+            
+            if is_ssl_error and self.config.verify_ssl:
+                console.print("⚠️  SSL certificate issue detected, trying without SSL verification...", style="yellow")
+                
+                # Attempt 2: Disable SSL verification as fallback
+                ssl_context_fallback = ssl.create_default_context()
+                ssl_context_fallback.check_hostname = False
+                ssl_context_fallback.verify_mode = ssl.CERT_NONE
+                
+                try:
+                    await self._websocket_connect(ws_url, headers, ssl_context_fallback)
+                    console.print("💡 Connected successfully with SSL verification disabled", style="dim")
+                    console.print("💡 To avoid this warning, set: export R4R_VERIFY_SSL=false", style="dim")
+                    return
+                except Exception as fallback_error:
+                    console.print(f"❌ Connection failed even with SSL disabled: {fallback_error}", style="red")
+                    raise fallback_error
+            else:
+                # Non-SSL error or SSL verification already disabled
+                console.print(f"❌ Connection error: {e}", style="red")
+                if is_ssl_error:
+                    console.print("💡 Try setting: export R4R_VERIFY_SSL=false", style="yellow")
+                raise e
+
+    async def _websocket_connect(self, ws_url: str, headers: Dict[str, str], ssl_context: ssl.SSLContext) -> None:
+        """Establish WebSocket connection and handle messages"""
+        async with websockets.connect(
+            ws_url, additional_headers=headers, ssl=ssl_context
+        ) as websocket:
+            console.print("🔗 Connected to log stream...", style="green")
+            async for message in websocket:
+                try:
+                    log_data = json.loads(message)
+                    self._format_log_message(log_data)
+                except json.JSONDecodeError:
+                    # Handle potential bytes message
+                    message_str = (
+                        message
+                        if isinstance(message, str)
+                        else message.decode("utf-8")
+                    )
+                    console.print(f"Raw: {message_str}", style="dim")
 
     def _format_log_message(self, log_data: Dict[str, Any]) -> None:
         """Format and display a single log message"""
