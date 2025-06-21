@@ -134,7 +134,7 @@ class TestRenderAPI:
         
         assert len(events) == 1
         assert events[0].id == "evt-123"
-        api.client.get.assert_called_with("services/srv-123/events")
+        api.client.get.assert_called_with("services/srv-123/events", params={'limit': 20})
     
     def test_get_service_status(self, api):
         """Test getting service status"""
@@ -171,7 +171,7 @@ class TestRenderAPI:
         
         assert len(services) == 1
         assert services[0].name == "test-app"
-        api.client.get.assert_called_with("services")
+        api.client.get.assert_called_with("services", params={'limit': 100})
     
     def test_create_service(self, api):
         """Test creating a service"""
@@ -229,7 +229,7 @@ class TestRenderAPI:
         deploy = api.trigger_deploy("srv-123", clear_cache=True)
         
         assert deploy.id == "dep-123"
-        api.client.post.assert_called_with("services/srv-123/deploys", {"clearCache": True})
+        api.client.post.assert_called_with("services/srv-123/deploys", {"clearCache": "clear"})
     
     def test_rollback_deploy(self, api):
         """Test rolling back a deployment"""

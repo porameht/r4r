@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """
 r4r Render API Client
-Monitoring and Core Services Management for Render API
+Consolidated API client for all Render operations
 """
 
+import asyncio
+import json
+import re
 import time
+import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+import websockets
 from rich.console import Console
 
 from .config import Config, HTTPClient, ServiceType, format_timestamp, get_status_icon
@@ -76,6 +81,21 @@ class Service:
     auto_deploy: bool = True
     branch: Optional[str] = None
     repo_url: Optional[str] = None
+    slug: Optional[str] = None
+    url: Optional[str] = None
+    region: Optional[str] = None
+    plan: Optional[str] = None
+
+    @classmethod
+    def _extract_repo_url(cls, repo_data: Any) -> Optional[str]:
+        """Extract repo URL from various repo data formats"""
+        if not repo_data:
+            return None
+        if isinstance(repo_data, str):
+            return repo_data
+        if isinstance(repo_data, dict):
+            return repo_data.get("url")
+        return None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Service":
@@ -86,9 +106,13 @@ class Service:
             status=data.get("status", ""),
             created_at=data.get("createdAt", ""),
             updated_at=data.get("updatedAt", ""),
-            auto_deploy=data.get("autoDeploy", True),
+            auto_deploy=data.get("autoDeploy") in ["yes", True],
             branch=data.get("branch"),
-            repo_url=data.get("repo", {}).get("url"),
+            repo_url=cls._extract_repo_url(data.get("repo")),
+            slug=data.get("slug"),
+            url=data.get("url"),
+            region=data.get("region"),
+            plan=data.get("plan"),
         )
 
     @property
@@ -120,8 +144,8 @@ class Deploy:
             status=data.get("status", ""),
             created_at=data.get("createdAt", ""),
             finished_at=data.get("finishedAt"),
-            commit_id=data.get("commit", {}).get("id"),
-            commit_message=data.get("commit", {}).get("message"),
+            commit_id=data.get("commit", {}).get("id") if data.get("commit") else None,
+            commit_message=data.get("commit", {}).get("message") if data.get("commit") else None,
         )
 
     @property
@@ -168,40 +192,180 @@ class Event:
         return format_timestamp(self.timestamp)
 
 
+@dataclass
+class Job:
+    """Domain entity: Service job"""
+
+    id: str
+    service_id: str
+    command: str
+    status: str
+    created_at: str
+    finished_at: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Job":
+        return cls(
+            id=data.get("id", ""),
+            service_id=data.get("serviceId", ""),
+            command=data.get("startCommand", ""),
+            status=data.get("status", ""),
+            created_at=data.get("createdAt", ""),
+            finished_at=data.get("finishedAt"),
+        )
+
+    @property
+    def status_icon(self) -> str:
+        return get_status_icon(self.status)
+
+
+@dataclass
+class Owner:
+    """Domain entity: Project/Service owner"""
+
+    id: str
+    name: str
+    email: str
+    type: str  # "user" or "team"
+    two_factor_auth_enabled: Optional[bool] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Owner":
+        return cls(
+            id=data.get("id", ""),
+            name=data.get("name", ""),
+            email=data.get("email", ""),
+            type=data.get("type", ""),
+            two_factor_auth_enabled=data.get("twoFactorAuthEnabled"),
+        )
+
+
+@dataclass
+class Project:
+    """Domain entity: Render project"""
+
+    id: str
+    name: str
+    created_at: str
+    updated_at: str
+    owner: Owner
+    environment_ids: List[str]
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Project":
+        return cls(
+            id=data.get("id", ""),
+            name=data.get("name", ""),
+            created_at=data.get("createdAt", ""),
+            updated_at=data.get("updatedAt", ""),
+            owner=Owner.from_dict(data.get("owner", {})),
+            environment_ids=data.get("environmentIds", []),
+        )
+
+    @property
+    def formatted_created_at(self) -> str:
+        return format_timestamp(self.created_at)
+
+    @property
+    def formatted_updated_at(self) -> str:
+        return format_timestamp(self.updated_at)
+
+
 class RenderAPI:
-    """Infrastructure: Render API Client"""
+    """Infrastructure: Consolidated Render API Client"""
 
     def __init__(self, config: Config):
         self.client = HTTPClient(config)
+        self.config = config
 
-    # Monitoring Methods
-    def get_service_events(self, service_id: str) -> List[Event]:
-        """Get events for a service"""
-        data = self.client.get(f"services/{service_id}/events")
-        return [Event.from_dict(event) for event in data.get("events", [])]
+    def _extract_items(self, data: Any, key: str) -> List[Dict[str, Any]]:
+        """Extract items from nested API response"""
+        if isinstance(data, list):
+            return [item.get(key, item) for item in data if key in item or "name" in item or "id" in item]
+        return data.get(f"{key}s", []) if isinstance(data, dict) else []
 
-    def get_event_details(self, event_id: str) -> Event:
-        """Get detailed information about a specific event"""
-        data = self.client.get(f"events/{event_id}")
-        return Event.from_dict(data)
+    # Service Management Methods
+    def list_services(self, limit: Optional[int] = None) -> List[Service]:
+        """List all services with pagination support"""
+        all_services = []
+        cursor = None
+        page_limit = 100  # Max per page to get all services efficiently
+        
+        while True:
+            params = {"limit": page_limit}
+            if cursor:
+                params["cursor"] = cursor
+                
+            data = self.client.get("services", params=params)
+            
+            # Handle response format
+            if isinstance(data, list):
+                services_data = self._extract_items(data, "service")
+                
+                for item in data:
+                    if "service" in item:
+                        service_data = item["service"]
+                        # Map status from suspended field
+                        if "suspended" in service_data:
+                            suspended = service_data["suspended"]
+                            if suspended == "not_suspended":
+                                service_data["status"] = "active"
+                            elif suspended == "suspended":
+                                service_data["status"] = "suspended"
+                            else:
+                                service_data["status"] = "unknown"
+                        else:
+                            service_data["status"] = "unknown"
+                            
+                        all_services.append(Service.from_dict(service_data))
+                        
+                    # Check for next page cursor
+                    if "cursor" in item:
+                        cursor = item["cursor"]
+                    else:
+                        cursor = None
+                        
+                # If we got fewer than page limit, we're done
+                if len(data) < page_limit:
+                    break
+                    
+            else:
+                # Handle non-paginated response
+                services_data = self._extract_items(data, "service")
+                for service in services_data:
+                    # Map status from suspended field
+                    if "suspended" in service:
+                        suspended = service["suspended"]
+                        if suspended == "not_suspended":
+                            service["status"] = "active"
+                        elif suspended == "suspended":
+                            service["status"] = "suspended"
+                        else:
+                            service["status"] = "unknown"
+                    else:
+                        service["status"] = "unknown"
+                        
+                    all_services.append(Service.from_dict(service))
+                break
+                
+        # Apply limit if specified
+        if limit and len(all_services) > limit:
+            all_services = all_services[:limit]
+            
+        return all_services
 
-    def get_service_status(self, service_id: str) -> Dict[str, Any]:
-        """Get current status of a service"""
+    def find_service(self, name_or_id: str) -> Optional[Service]:
+        """Find service by name or ID"""
+        services = self.list_services()
+        return next(
+            (s for s in services if s.name == name_or_id or s.id == name_or_id),
+            None,
+        )
+
+    def get_service_details(self, service_id: str) -> Service:
+        """Get detailed service information"""
         data = self.client.get(f"services/{service_id}")
-        return {
-            "id": data.get("id"),
-            "name": data.get("name"),
-            "status": data.get("status"),
-            "type": data.get("type"),
-            "health": data.get("health", "unknown"),
-            "updated_at": data.get("updatedAt"),
-        }
-
-    # Core Services Management Methods
-    def list_services(self) -> List[Service]:
-        """List all services"""
-        data = self.client.get("services")
-        return [Service.from_dict(service) for service in data.get("services", [])]
+        return Service.from_dict(data)
 
     def create_service(
         self,
@@ -271,15 +435,18 @@ class RenderAPI:
         return True
 
     # Deployment Management Methods
-    def list_deploys(self, service_id: str) -> List[Deploy]:
+    def list_deploys(self, service_id: str, limit: int = 20) -> List[Deploy]:
         """List deployments for a service"""
-        data = self.client.get(f"services/{service_id}/deploys")
-        return [Deploy.from_dict(deploy) for deploy in data.get("deploys", [])]
+        params = {"limit": limit}
+        data = self.client.get(f"services/{service_id}/deploys", params=params)
+        deploys_data = self._extract_items(data, "deploy")
+        return [Deploy.from_dict(deploy) for deploy in deploys_data]
 
     def trigger_deploy(self, service_id: str, clear_cache: bool = False) -> Deploy:
         """Trigger a new deployment"""
+        cache_option = "clear" if clear_cache else "do_not_clear"
         data = self.client.post(
-            f"services/{service_id}/deploys", {"clearCache": clear_cache}
+            f"services/{service_id}/deploys", {"clearCache": cache_option}
         )
         return Deploy.from_dict(data)
 
@@ -289,6 +456,183 @@ class RenderAPI:
             f"services/{service_id}/rollback", {"deployId": deploy_id}
         )
         return Deploy.from_dict(data)
+
+    # Job Management Methods
+    def create_job(self, service_id: str, command: str) -> Job:
+        """Create a one-off job"""
+        data = self.client.post(
+            f"services/{service_id}/jobs", {"startCommand": command}
+        )
+        return Job.from_dict(data)
+
+    def list_jobs(self, service_id: str, limit: int = 20) -> List[Job]:
+        """List recent jobs for a service"""
+        params = {"limit": limit}
+        data = self.client.get(f"services/{service_id}/jobs", params=params)
+        jobs_data = self._extract_items(data, "job")
+        return [Job.from_dict(job) for job in jobs_data]
+
+    def get_job_status(self, job_id: str) -> Job:
+        """Get job status"""
+        data = self.client.get(f"jobs/{job_id}")
+        return Job.from_dict(data)
+
+    # Events and Monitoring Methods
+    def get_service_events(self, service_id: str, limit: int = 20) -> List[Event]:
+        """Get events for a service"""
+        params = {"limit": limit}
+        data = self.client.get(f"services/{service_id}/events", params=params)
+        events_data = self._extract_items(data, "event")
+        return [Event.from_dict(event) for event in events_data]
+
+    def get_event_details(self, event_id: str) -> Event:
+        """Get detailed information about a specific event"""
+        data = self.client.get(f"events/{event_id}")
+        return Event.from_dict(data)
+
+    def get_service_status(self, service_id: str) -> Dict[str, Any]:
+        """Get current status of a service"""
+        data = self.client.get(f"services/{service_id}")
+        return {
+            "id": data.get("id"),
+            "name": data.get("name"),
+            "status": data.get("status"),
+            "type": data.get("type"),
+            "health": data.get("health", "unknown"),
+            "updated_at": data.get("updatedAt"),
+        }
+
+    # Project Management Methods
+    def list_projects(self) -> List[Project]:
+        """List all projects"""
+        data = self.client.get("projects")
+        projects_data = self._extract_items(data, "project")
+        return [Project.from_dict(project) for project in projects_data]
+
+    def get_project_details(self, project_id: str) -> Project:
+        """Get detailed project information"""
+        data = self.client.get(f"projects/{project_id}")
+        return Project.from_dict(data)
+
+    def find_project(self, name_or_id: str) -> Optional[Project]:
+        """Find project by name or ID"""
+        projects = self.list_projects()
+        return next(
+            (p for p in projects if p.name == name_or_id or p.id == name_or_id),
+            None,
+        )
+
+    def list_services_by_project(self, project_id: str) -> List[Service]:
+        """List all services in a specific project"""
+        # Get project details to get environment IDs
+        project = self.get_project_details(project_id)
+        
+        # Get all services
+        all_services = self.list_services()
+        
+        # Filter services by environment IDs in the project
+        project_services = []
+        for service in all_services:
+            try:
+                # Get service details to check environment
+                service_data = self.client.get(f"services/{service.id}")
+                if service_data.get("environmentId") in project.environment_ids:
+                    project_services.append(service)
+            except:
+                # Skip if we can't determine environment
+                continue
+                
+        return project_services
+
+    def list_services_by_environment(self, environment_id: str) -> List[Service]:
+        """List all services in a specific environment"""
+        all_services = self.list_services()
+        env_services = []
+        
+        for service in all_services:
+            try:
+                service_data = self.client.get(f"services/{service.id}")
+                if service_data.get("environmentId") == environment_id:
+                    env_services.append(service)
+            except:
+                continue
+                
+        return env_services
+
+    # User and Account Methods
+    def get_api_key_info(self) -> Dict[str, Any]:
+        """Get information about the current API key"""
+        return self.client.get("users")
+
+    def get_owner_id(self) -> str:
+        """Get the owner/workspace ID for the current user"""
+        owners_data = self.client.get("owners")
+        if owners_data and len(owners_data) > 0:
+            owner = owners_data[0].get("owner", {})
+            return owner.get("id", "")
+        return ""
+
+    # Logs Methods
+    def get_service_logs(self, service_id: str, lines: int = 100) -> Dict[str, Any]:
+        """Get service logs"""
+        params = {"lines": lines}
+        return self.client.get(f"services/{service_id}/logs", params=params)
+
+    async def stream_logs_async(self, service_id: str, owner_id: str, lines: int = 100) -> None:
+        """Stream logs via WebSocket"""
+        params = {
+            "ownerId": owner_id,
+            "resource": [service_id],
+            "limit": lines,
+            "direction": "backward",
+        }
+
+        ws_url = f"wss://api.render.com/v1/logs/subscribe?{urllib.parse.urlencode(params, doseq=True)}"
+        headers = {"Authorization": f"Bearer {self.config.api_key}"}
+
+        try:
+            async with websockets.connect(ws_url, additional_headers=headers) as websocket:
+                console.print("🔗 Connected to log stream...", style="green")
+                async for message in websocket:
+                    try:
+                        log_data = json.loads(message)
+                        self._format_log_message(log_data)
+                    except json.JSONDecodeError:
+                        console.print(f"Raw: {message}", style="dim")
+        except Exception as e:
+            console.print(f"❌ Connection error: {e}", style="red")
+
+    def _format_log_message(self, log_data: Dict[str, Any]) -> None:
+        """Format and display a single log message"""
+        timestamp = log_data.get("timestamp", "")
+        message = log_data.get("message", "")
+        
+        # Parse labels for metadata
+        labels = {label["name"]: label["value"] for label in log_data.get("labels", []) 
+                 if isinstance(label, dict) and "name" in label}
+        
+        level = labels.get("level", "info").upper()
+        log_type = labels.get("type", "app")
+        
+        # Format timestamp
+        try:
+            if timestamp:
+                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                time_str = dt.strftime("%H:%M:%S")
+            else:
+                time_str = datetime.now().strftime("%H:%M:%S")
+        except:
+            time_str = timestamp[:8] if timestamp else datetime.now().strftime("%H:%M:%S")
+        
+        # Clean message
+        clean_message = re.sub(r'\x1b\[[0-9;]*[mK]', '', message)
+        clean_message = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', clean_message).strip()
+        
+        # Color by level
+        colors = {"ERROR": "red", "WARN": "yellow", "INFO": "blue", "DEBUG": "dim"}
+        level_color = colors.get(level, "white")
+        
+        console.print(f"[dim]{time_str}[/dim] [{level_color}]{level}[/{level_color}] [magenta]{log_type}[/magenta] {clean_message}")
 
     # Log Stream Methods (placeholder implementations)
     def list_log_streams(self, service_id: Optional[str] = None) -> List[LogStream]:

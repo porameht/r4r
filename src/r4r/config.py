@@ -149,6 +149,9 @@ def get_status_icon(status: str) -> str:
         "failed": "❌",
         "running": "🟡",
         "canceled": "⚪",
+        "unknown": "❓",
+        "not_suspended": "🟢",
+        "update_failed": "🔴",
     }
     return status_icons.get(status.lower(), "❓")
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-r4r CLI Utilities
-Common CLI utilities and presentation logic
+r4r CLI Display Utilities
+Simple display utilities for CLI output
 """
 
 from datetime import datetime
@@ -37,18 +37,19 @@ def create_services_table(services: List[Service], detailed: bool = False) -> Ta
         service_type_display = service.type.replace("_", " ").title()
 
         # Extract URL
-        url = "N/A"
-        if hasattr(service, "url") and service.url:
-            url = service.url
-        elif service.repo_url:
-            # Try to construct URL from service name
-            url = f"https://{service.name.lower().replace('_', '-')}.onrender.com"
+        url = service.url or "N/A"
+        if not url or url == "N/A":
+            if service.slug:
+                url = f"https://{service.slug}.onrender.com"
+            elif service.repo_url:
+                # Try to construct URL from service name
+                url = f"https://{service.name.lower().replace('_', '-')}.onrender.com"
 
         row_data = [service.name, service_type_display, status_display]
 
         if detailed:
-            region = getattr(service, "region", "N/A")
-            plan = getattr(service, "plan", "N/A")
+            region = service.region or "N/A"
+            plan = service.plan or "N/A"
             created = service.created_at[:10] if service.created_at else "N/A"
             row_data.extend([region, plan, created])
 
@@ -101,6 +102,15 @@ def create_service_info_panel(service: Service) -> Panel:
 
     if service.repo_url:
         info += f"📚 **Repository:** {service.repo_url}\n"
+
+    if service.region:
+        info += f"📍 **Region:** {service.region}\n"
+
+    if service.plan:
+        info += f"💰 **Plan:** {service.plan}\n"
+
+    if service.url:
+        info += f"🌐 **URL:** {service.url}\n"
 
     return Panel(info, title="📋 Service Information", expand=False)
 

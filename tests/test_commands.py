@@ -195,16 +195,14 @@ class TestRenderCLI:
     def test_show_service_info(self, cli, sample_service, sample_deploy):
         """Test showing service info"""
         cli._find_service = Mock(return_value=sample_service)
-        cli.render_service.get_service_overview.return_value = {
-            'status': {'id': 'srv-123', 'name': 'test-app'},
-            'recent_events': [],
-            'recent_deploys': [sample_deploy]
-        }
+        cli.render_service.api.get_service_details.return_value = sample_service
+        cli.render_service.api.list_deploys.return_value = [sample_deploy]
         
         with patch('src.r4r.commands.console.print'):
             cli.show_service_info("test-app")
             
-            cli.render_service.get_service_overview.assert_called_with("srv-123")
+            cli.render_service.api.get_service_details.assert_called_with("srv-123")
+            cli.render_service.api.list_deploys.assert_called_with("srv-123", limit=5)
     
     # Test list deployments command
     def test_list_deployments(self, cli, sample_service, sample_deploy):
@@ -307,7 +305,7 @@ class TestRenderCLI:
     # Test _find_service helper
     def test_find_service_by_name(self, cli, sample_service):
         """Test finding service by name"""
-        cli.render_service.api.list_services.return_value = [sample_service]
+        cli.render_service.api.find_service.return_value = sample_service
         
         result = cli._find_service("test-app")
         
@@ -315,7 +313,7 @@ class TestRenderCLI:
     
     def test_find_service_by_id(self, cli, sample_service):
         """Test finding service by ID"""
-        cli.render_service.api.list_services.return_value = [sample_service]
+        cli.render_service.api.find_service.return_value = sample_service
         
         result = cli._find_service("srv-123")
         
@@ -323,7 +321,7 @@ class TestRenderCLI:
     
     def test_find_service_not_found(self, cli):
         """Test service not found"""
-        cli.render_service.api.list_services.return_value = []
+        cli.render_service.api.find_service.return_value = None
         
         with patch('src.r4r.commands.handle_service_not_found') as mock_not_found:
             result = cli._find_service("non-existent")
@@ -333,7 +331,7 @@ class TestRenderCLI:
     
     def test_find_service_api_error(self, cli):
         """Test find service with API error"""
-        cli.render_service.api.list_services.side_effect = APIError("Network error", 500)
+        cli.render_service.api.find_service.side_effect = APIError("Network error", 500)
         
         with patch('src.r4r.commands.display_error') as mock_error:
             result = cli._find_service("test-app")

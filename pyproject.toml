@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "r4r"
-version = "0.1.0"
+version = "0.2.0"
 description = "Super easy Render CLI with advanced features - deployments, jobs, logs, and more"
 readme = "README.md"
 license = { text = "MIT" }
@@ -27,12 +27,11 @@ classifiers = [
 ]
 requires-python = ">=3.8"
 dependencies = [
-    "typer>=0.9.0",
+    "requests>=2.31.0",
     "rich>=13.0.0",
-    "requests>=2.28.0",
+    "typer>=0.9.0",
     "pyyaml>=6.0",
-    "textual>=0.44.0",
-    "websockets>=11.0.0",
+    "websockets>=12.0",
 ]
 
 [project.optional-dependencies]
@@ -53,7 +52,7 @@ Repository = "https://github.com/porameht/r4r.git"
 Issues = "https://github.com/porameht/r4r/issues"
 
 [project.scripts]
-r4r = "r4r.cli:app"
+r4r = "r4r.cli:cli_main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/r4r"]
