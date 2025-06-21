@@ -604,9 +604,11 @@ class RenderAPI:
         # Try connecting with SSL verification first, then fallback if needed
         await self._connect_websocket_with_fallback(ws_url, headers)
 
-    async def _connect_websocket_with_fallback(self, ws_url: str, headers: Dict[str, str]) -> None:
+    async def _connect_websocket_with_fallback(
+        self, ws_url: str, headers: Dict[str, str]
+    ) -> None:
         """Connect to WebSocket with automatic SSL fallback"""
-        
+
         # Attempt 1: Use configured SSL settings
         ssl_context = ssl.create_default_context()
         if not self.config.verify_ssl:
@@ -619,34 +621,51 @@ class RenderAPI:
         except Exception as e:
             # Check if this is an SSL-related error
             error_str = str(e).lower()
-            is_ssl_error = any(keyword in error_str for keyword in [
-                "ssl", "certificate", "verify_failed", "cert", "tls"
-            ])
-            
+            is_ssl_error = any(
+                keyword in error_str
+                for keyword in ["ssl", "certificate", "verify_failed", "cert", "tls"]
+            )
+
             if is_ssl_error and self.config.verify_ssl:
-                console.print("⚠️  SSL certificate issue detected, trying without SSL verification...", style="yellow")
-                
+                console.print(
+                    "⚠️  SSL certificate issue detected, trying without SSL verification...",
+                    style="yellow",
+                )
+
                 # Attempt 2: Disable SSL verification as fallback
                 ssl_context_fallback = ssl.create_default_context()
                 ssl_context_fallback.check_hostname = False
                 ssl_context_fallback.verify_mode = ssl.CERT_NONE
-                
+
                 try:
                     await self._websocket_connect(ws_url, headers, ssl_context_fallback)
-                    console.print("💡 Connected successfully with SSL verification disabled", style="dim")
-                    console.print("💡 To avoid this warning, set: export R4R_VERIFY_SSL=false", style="dim")
+                    console.print(
+                        "💡 Connected successfully with SSL verification disabled",
+                        style="dim",
+                    )
+                    console.print(
+                        "💡 To avoid this warning, set: export R4R_VERIFY_SSL=false",
+                        style="dim",
+                    )
                     return
                 except Exception as fallback_error:
-                    console.print(f"❌ Connection failed even with SSL disabled: {fallback_error}", style="red")
+                    console.print(
+                        f"❌ Connection failed even with SSL disabled: {fallback_error}",
+                        style="red",
+                    )
                     raise fallback_error
             else:
                 # Non-SSL error or SSL verification already disabled
                 console.print(f"❌ Connection error: {e}", style="red")
                 if is_ssl_error:
-                    console.print("💡 Try setting: export R4R_VERIFY_SSL=false", style="yellow")
+                    console.print(
+                        "💡 Try setting: export R4R_VERIFY_SSL=false", style="yellow"
+                    )
                 raise e
 
-    async def _websocket_connect(self, ws_url: str, headers: Dict[str, str], ssl_context: ssl.SSLContext) -> None:
+    async def _websocket_connect(
+        self, ws_url: str, headers: Dict[str, str], ssl_context: ssl.SSLContext
+    ) -> None:
         """Establish WebSocket connection and handle messages"""
         async with websockets.connect(
             ws_url, additional_headers=headers, ssl=ssl_context
@@ -659,9 +678,7 @@ class RenderAPI:
                 except json.JSONDecodeError:
                     # Handle potential bytes message
                     message_str = (
-                        message
-                        if isinstance(message, str)
-                        else message.decode("utf-8")
+                        message if isinstance(message, str) else message.decode("utf-8")
                     )
                     console.print(f"Raw: {message_str}", style="dim")
 
