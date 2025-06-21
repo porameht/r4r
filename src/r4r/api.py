@@ -6,6 +6,7 @@ Consolidated API client for all Render operations
 
 import json
 import re
+import ssl
 import time
 import urllib.parse
 from dataclasses import dataclass
@@ -600,9 +601,16 @@ class RenderAPI:
         ws_url = f"wss://api.render.com/v1/logs/subscribe?{urllib.parse.urlencode(params, doseq=True)}"
         headers = {"Authorization": f"Bearer {self.config.api_key}"}
 
+        # Create SSL context based on config setting
+        ssl_context = None
+        if not self.config.verify_ssl:
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
         try:
             async with websockets.connect(
-                ws_url, additional_headers=headers
+                ws_url, additional_headers=headers, ssl=ssl_context
             ) as websocket:
                 console.print("🔗 Connected to log stream...", style="green")
                 async for message in websocket:
@@ -619,6 +627,10 @@ class RenderAPI:
                         console.print(f"Raw: {message_str}", style="dim")
         except Exception as e:
             console.print(f"❌ Connection error: {e}", style="red")
+            if "SSL" in str(e) or "certificate" in str(e).lower():
+                console.print("💡 If you're experiencing SSL certificate issues, try:", style="yellow")
+                console.print("   export R4R_VERIFY_SSL=false", style="dim")
+                console.print("   Then run the command again", style="dim")
 
     def _format_log_message(self, log_data: Dict[str, Any]) -> None:
         """Format and display a single log message"""
