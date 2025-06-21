@@ -601,10 +601,10 @@ class RenderAPI:
         ws_url = f"wss://api.render.com/v1/logs/subscribe?{urllib.parse.urlencode(params, doseq=True)}"
         headers = {"Authorization": f"Bearer {self.config.api_key}"}
 
-        # Create SSL context based on config setting
-        ssl_context = None
+        # Create SSL context - always needed for wss:// URLs
+        ssl_context = ssl.create_default_context()
         if not self.config.verify_ssl:
-            ssl_context = ssl.create_default_context()
+            # Only disable SSL verification if explicitly configured
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
 
