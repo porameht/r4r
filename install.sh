@@ -4,25 +4,26 @@ set -e
 # r4r installation script
 # Usage: curl -sSL https://raw.githubusercontent.com/porameht/r4r/main/install.sh | bash
 
-echo "🚀 Installing r4r - Super Easy Render CLI..."
+echo "🚀 Installing r4r - Render CLI..."
 
-# Check if uv is available
-if command -v uv &> /dev/null; then
-    echo "✅ Found uv, installing with uv..."
-    uv tool install r4r
-    echo "✅ r4r installed successfully with uv!"
-elif command -v pip &> /dev/null; then
-    echo "✅ Found pip, installing with pip..."
-    pip install r4r
-    echo "✅ r4r installed successfully with pip!"
+# Try pip first (most common)
+if command -v pip &> /dev/null; then
+    echo "✅ Installing with pip..."
+    pip install git+https://github.com/porameht/r4r.git
+    echo "✅ r4r installed successfully!"
+elif command -v uv &> /dev/null; then
+    echo "✅ Installing with uv..."
+    uv tool install git+https://github.com/porameht/r4r.git
+    echo "✅ r4r installed successfully!"
 else
-    echo "❌ Error: Neither uv nor pip found. Please install Python and pip first."
+    echo "❌ Error: Neither pip nor uv found."
+    echo "Please install Python first: https://python.org"
     exit 1
 fi
 
 echo ""
-echo "🎉 Installation complete! Get started with:"
-echo "   r4r login"
-echo "   r4r list"
+echo "🎉 Get started with:"
+echo "   r4r auth login"
+echo "   r4r services list"
 echo ""
 echo "📖 For more information, visit: https://github.com/porameht/r4r"
