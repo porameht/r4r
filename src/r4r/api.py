@@ -628,7 +628,10 @@ class RenderAPI:
         except Exception as e:
             console.print(f"❌ Connection error: {e}", style="red")
             if "SSL" in str(e) or "certificate" in str(e).lower():
-                console.print("💡 If you're experiencing SSL certificate issues, try:", style="yellow")
+                console.print(
+                    "💡 If you're experiencing SSL certificate issues, try:",
+                    style="yellow",
+                )
                 console.print("   export R4R_VERIFY_SSL=false", style="dim")
                 console.print("   Then run the command again", style="dim")
 

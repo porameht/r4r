@@ -46,10 +46,14 @@ class Config:
         api_key = os.getenv("RENDER_API_KEY")
         if not api_key:
             raise ValueError("RENDER_API_KEY environment variable required")
-        
+
         # Allow SSL verification to be disabled via environment variable
-        verify_ssl = os.getenv("R4R_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
-        
+        verify_ssl = os.getenv("R4R_VERIFY_SSL", "true").lower() not in (
+            "false",
+            "0",
+            "no",
+        )
+
         return cls(api_key=api_key, verify_ssl=verify_ssl)
 
 
@@ -68,7 +72,9 @@ class HTTPClient:
     def __init__(self, config: Config):
         self.config = config
         self.session = requests.Session()
-        self.session.verify = config.verify_ssl  # Use SSL verification setting from config
+        self.session.verify = (
+            config.verify_ssl
+        )  # Use SSL verification setting from config
         self.session.headers.update(
             {
                 "Authorization": f"Bearer {config.api_key}",
@@ -88,7 +94,9 @@ class HTTPClient:
         except requests.exceptions.RequestException as e:
             error_msg = f"Request failed: {e}"
             if "SSL" in str(e) or "certificate" in str(e).lower():
-                error_msg += "\n💡 Try setting R4R_VERIFY_SSL=false to disable SSL verification"
+                error_msg += (
+                    "\n💡 Try setting R4R_VERIFY_SSL=false to disable SSL verification"
+                )
             raise APIError(error_msg)
 
     def _extract_error_message(self, response: requests.Response) -> str:
