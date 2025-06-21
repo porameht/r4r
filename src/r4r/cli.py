@@ -7,6 +7,7 @@ Following domain-driven design principles
 import typer
 from typing import Optional
 
+from . import __version__
 from .commands import RenderCLI
 
 # Main application
@@ -296,12 +297,33 @@ def legacy_list(
 
 
 # =============================================================================
+# VERSION CALLBACK
+# =============================================================================
+
+
+def version_callback(value: bool):
+    """Display version information"""
+    if value:
+        typer.echo(f"r4r version {__version__}")
+        raise typer.Exit()
+
+
+# =============================================================================
 # MAIN CALLBACK
 # =============================================================================
 
 
 @app.callback()
-def main():
+def main(
+    version: Optional[bool] = typer.Option(
+        None,
+        "--version",
+        "-v",
+        help="Show version and exit",
+        callback=version_callback,
+        is_eager=True,
+    ),
+):
     """
     🚀 r4r - Professional Render CLI
 
