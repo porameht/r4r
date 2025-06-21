@@ -10,9 +10,10 @@ env:
   UV_VERSION: "0.4.15"
 
 jobs:
-  create-release:
-    name: Create Release
+  pre-release:
+    name: Create Pre-Release
     runs-on: ubuntu-latest
+    if: contains(github.ref_name, 'rc') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta')
     permissions:
       contents: write
       packages: write
@@ -71,44 +72,108 @@ jobs:
         echo "File sizes:"
         du -h dist/*
     
-    - name: Generate release notes
-      id: release_notes
+    - name: Create GitHub Pre-Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.get_version.outputs.tag }}
+        name: Pre-Release ${{ steps.get_version.outputs.tag }}
+        generate_release_notes: true
+        files: |
+          dist/*
+          install.sh
+        draft: false
+        prerelease: true
+        make_latest: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Test PyPI Upload (Dry Run)
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.TEST_PYPI_TOKEN }}
       run: |
-        echo "## Changes" > RELEASE_NOTES.md
-        echo "" >> RELEASE_NOTES.md
-        
-        # Get the previous tag
-        PREV_TAG=$(git tag --sort=-version:refname | grep -v "${{ steps.get_version.outputs.tag }}" | head -n 1)
-        
-        if [ ! -z "$PREV_TAG" ]; then
-          # Get commits since previous tag
-          git log --pretty=format:"- %s" $PREV_TAG..${{ steps.get_version.outputs.tag }} >> RELEASE_NOTES.md
+        if [ -z "$TWINE_PASSWORD" ]; then
+          echo "⚠️ TEST_PYPI_TOKEN not set, skipping test upload"
         else
-          echo "- Initial release" >> RELEASE_NOTES.md
+          echo "📦 Testing upload to Test PyPI..."
+          uv run twine upload --repository testpypi dist/* --non-interactive
+          echo "✅ Successfully uploaded to Test PyPI"
         fi
+
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    if: "!contains(github.ref_name, 'rc') && !contains(github.ref_name, 'alpha') && !contains(github.ref_name, 'beta')"
+    permissions:
+      contents: write
+      packages: write
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: ${{ env.UV_VERSION }}
+    
+    - name: Get version from tag
+      id: get_version
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/v}
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+    
+    - name: Update version in pyproject.toml
+      run: |
+        uv run python -c "
+        import re
+        with open('pyproject.toml', 'r') as f:
+            content = f.read()
+        content = re.sub(r'version = \"[^\"]*\"', f'version = \"${{ steps.get_version.outputs.version }}\"', content)
+        with open('pyproject.toml', 'w') as f:
+            f.write(content)
+        "
+    
+    - name: Install build dependencies
+      run: |
+        uv sync --dev
+        uv add --dev build twine
+    
+    - name: Build distribution
+      run: |
+        uv build
+    
+    - name: Verify distribution
+      run: |
+        uv run twine check dist/*
         
-        # Output the content for GitHub using a unique delimiter
-        delimiter=$(openssl rand -hex 8)
-        {
-          echo "release_notes<<${delimiter}"
-          cat RELEASE_NOTES.md
-          echo "${delimiter}"
-        } >> $GITHUB_OUTPUT
+        # List built files
+        echo "Built files:"
+        ls -la dist/
+        
+        # Get file sizes
+        echo "File sizes:"
+        du -h dist/*
     
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.get_version.outputs.tag }}
         name: Release ${{ steps.get_version.outputs.tag }}
-        body: ${{ steps.release_notes.outputs.release_notes }}
+        generate_release_notes: true
         files: |
           dist/*
           install.sh
-          install-pip.sh
-          install-url.py
         draft: false
-        prerelease: ${{ contains(steps.get_version.outputs.tag, 'rc') || contains(steps.get_version.outputs.tag, 'alpha') || contains(steps.get_version.outputs.tag, 'beta') }}
-        make_latest: ${{ !contains(steps.get_version.outputs.tag, 'rc') && !contains(steps.get_version.outputs.tag, 'alpha') && !contains(steps.get_version.outputs.tag, 'beta') }}
+        prerelease: false
+        make_latest: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
