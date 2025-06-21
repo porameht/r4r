@@ -5,23 +5,18 @@ Clean command implementations following KISS and DRY principles
 """
 
 import asyncio
-import json
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union, Sequence
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.prompt import Confirm
 from rich.table import Table
 
-from .api import RenderService, Service, Deploy, Job, Event, Project
+from .api import RenderService, Service, Project
 from .config import APIError, Config, ConfigManager
 from .display import (
     confirm_action,
-    create_deploys_table,
-    create_service_info_panel,
-    create_services_table,
     display_error,
     display_info,
     display_success,
@@ -32,7 +27,9 @@ from .display import (
 console = Console()
 
 
-def _create_table(title: str, columns: list) -> Table:
+def _create_table(
+    title: str, columns: Sequence[Union[tuple[str, str], tuple[str, str, int]]]
+) -> Table:
     """Create a standardized table"""
     table = Table(title=title)
     for column_data in columns:
@@ -113,13 +110,18 @@ class RenderCLI:
 📅 **Login Time:** {config.get("login_time", "Unknown")}
 🚀 **Services:** {len(services)} total
             """
-            console.print(Panel(panel_content, title="🔐 Current Session", expand=False))
+            console.print(
+                Panel(panel_content, title="🔐 Current Session", expand=False)
+            )
         except APIError as e:
             display_error(f"Failed to get user info: {e.message}")
             raise SystemExit(1)
 
     def list_services(
-        self, detailed: bool = False, service_type: Optional[str] = None, status_filter: Optional[str] = None
+        self,
+        detailed: bool = False,
+        service_type: Optional[str] = None,
+        status_filter: Optional[str] = None,
     ) -> None:
         """Handle list services command"""
         with console.status("Getting all services..."):
@@ -138,7 +140,9 @@ class RenderCLI:
 
         # Filter by status if specified
         if status_filter:
-            services = [s for s in services if s.status.lower() == status_filter.lower()]
+            services = [
+                s for s in services if s.status.lower() == status_filter.lower()
+            ]
             if not services:
                 display_warning(f"No services found with status '{status_filter}'")
                 return
@@ -146,17 +150,21 @@ class RenderCLI:
         # Show available statuses if user wants to see them
         if not status_filter:
             available_statuses = sorted(list(set(s.status for s in services)))
-            console.print(f"💡 Available statuses: {', '.join(available_statuses)}", style="dim")
+            console.print(
+                f"💡 Available statuses: {', '.join(available_statuses)}", style="dim"
+            )
             console.print("💡 Use --status <status> to filter by status", style="dim")
 
         # Create table with proper data
-        columns = [
+        columns: list[Union[tuple[str, str], tuple[str, str, int]]] = [
             ("Name", "cyan", 20),
-            ("Type", "magenta", 12), 
+            ("Type", "magenta", 12),
             ("Status", "green", 12),
         ]
         if detailed:
-            columns.extend([("Region", "yellow", 10), ("Plan", "blue", 10), ("Created", "dim", 12)])
+            columns.extend(
+                [("Region", "yellow", 10), ("Plan", "blue", 10), ("Created", "dim", 12)]
+            )
         columns.append(("URL", "blue"))
 
         table = _create_table(f"Your Render Services ({len(services)})", columns)
@@ -165,23 +173,25 @@ class RenderCLI:
             # Get status display
             status_display = f"{service.status_icon} {service.status.title()}"
             service_type_display = service.type.replace("_", " ").title()
-            
+
             # Build URL
             url = service.url or "N/A"
             if not url or url == "N/A":
                 if service.slug:
                     url = f"https://{service.slug}.onrender.com"
                 elif service.name:
-                    url = f"https://{service.name.lower().replace('_', '-')}.onrender.com"
+                    url = (
+                        f"https://{service.name.lower().replace('_', '-')}.onrender.com"
+                    )
 
             row_data = [service.name, service_type_display, status_display]
-            
+
             if detailed:
                 region = service.region or "N/A"
                 plan = service.plan or "N/A"
                 created = service.created_at[:10] if service.created_at else "N/A"
                 row_data.extend([region, plan, created])
-            
+
             row_data.append(url)
             table.add_row(*row_data)
 
@@ -245,18 +255,25 @@ class RenderCLI:
 
         # Display recent deployments
         if deployments:
-            table = _create_table("🚀 Recent Deployments (Last 5)", [
-                ("Status", "green", 12),
-                ("Started", "blue", 20),
-                ("Duration", "yellow", 12),
-                ("Commit", "cyan", 12),
-            ])
+            table = _create_table(
+                "🚀 Recent Deployments (Last 5)",
+                [
+                    ("Status", "green", 12),
+                    ("Started", "blue", 20),
+                    ("Duration", "yellow", 12),
+                    ("Commit", "cyan", 12),
+                ],
+            )
 
             for deploy in deployments:
                 status_display = f"{deploy.status_icon} {deploy.status.title()}"
-                started = deploy.created_at[:19].replace("T", " ") if deploy.created_at else "N/A"
+                started = (
+                    deploy.created_at[:19].replace("T", " ")
+                    if deploy.created_at
+                    else "N/A"
+                )
                 commit = deploy.commit_id[:8] if deploy.commit_id else "N/A"
-                
+
                 table.add_row(status_display, started, deploy.duration, commit)
 
             console.print(table)
@@ -274,17 +291,22 @@ class RenderCLI:
             display_warning(f"No deployments found for {service.name}")
             return
 
-        table = _create_table(f"🚀 Deployments for {service.name} (Last {len(deploys)})", [
-            ("ID", "cyan", 18),
-            ("Status", "green", 12),
-            ("Started", "blue", 20),
-            ("Duration", "yellow", 12),
-            ("Commit", "magenta", 10),
-        ])
+        table = _create_table(
+            f"🚀 Deployments for {service.name} (Last {len(deploys)})",
+            [
+                ("ID", "cyan", 18),
+                ("Status", "green", 12),
+                ("Started", "blue", 20),
+                ("Duration", "yellow", 12),
+                ("Commit", "magenta", 10),
+            ],
+        )
 
         for deploy in deploys:
             status_display = f"{deploy.status_icon} {deploy.status.title()}"
-            started = deploy.created_at[:19].replace("T", " ") if deploy.created_at else "N/A"
+            started = (
+                deploy.created_at[:19].replace("T", " ") if deploy.created_at else "N/A"
+            )
             commit_id = deploy.commit_id[:8] if deploy.commit_id else "N/A"
 
             table.add_row(
@@ -306,7 +328,7 @@ class RenderCLI:
         try:
             job = self.render_service.api.create_job(service.id, command)
             display_success(f"Job created! ID: {job.id}")
-            
+
             if wait:
                 self._wait_for_job_completion(job.id)
         except APIError as e:
@@ -325,17 +347,22 @@ class RenderCLI:
             display_warning(f"No jobs found for {service.name}")
             return
 
-        table = _create_table(f"⚙️ Jobs for {service.name} (Last {len(jobs)})", [
-            ("ID", "cyan", 18),
-            ("Command", "green", 30),
-            ("Status", "yellow", 12),
-            ("Created", "blue", 20),
-        ])
+        table = _create_table(
+            f"⚙️ Jobs for {service.name} (Last {len(jobs)})",
+            [
+                ("ID", "cyan", 18),
+                ("Command", "green", 30),
+                ("Status", "yellow", 12),
+                ("Created", "blue", 20),
+            ],
+        )
 
         for job in jobs:
             status_display = f"{job.status_icon} {job.status.title()}"
             created = job.created_at[:19].replace("T", " ") if job.created_at else "N/A"
-            command_truncated = job.command[:27] + "..." if len(job.command) > 30 else job.command
+            command_truncated = (
+                job.command[:27] + "..." if len(job.command) > 30 else job.command
+            )
 
             table.add_row(
                 job.id[:16],
@@ -350,14 +377,14 @@ class RenderCLI:
         """Handle job status command"""
         try:
             job = self.render_service.api.get_job_status(job_id)
-            
+
             info = f"""
 🆔 **Job ID:** {job.id}
 ⚙️ **Command:** {job.command}
 📊 **Status:** {job.status_icon} {job.status.title()}
 📅 **Created:** {job.created_at[:19].replace("T", " ") if job.created_at else "N/A"}
             """
-            
+
             if job.finished_at:
                 info += f"🏁 **Finished:** {job.finished_at[:19].replace('T', ' ')}\n"
 
@@ -378,15 +405,24 @@ class RenderCLI:
             display_warning(f"No events found for {service.name}")
             return
 
-        table = _create_table(f"📅 Events for {service.name} (Last {len(events)})", [
-            ("Type", "cyan", 15),
-            ("Description", "green", 40),
-            ("Timestamp", "blue", 20),
-        ])
+        table = _create_table(
+            f"📅 Events for {service.name} (Last {len(events)})",
+            [
+                ("Type", "cyan", 15),
+                ("Description", "green", 40),
+                ("Timestamp", "blue", 20),
+            ],
+        )
 
         for event in events:
-            timestamp = event.timestamp[:19].replace("T", " ") if event.timestamp else "N/A"
-            description = event.description[:37] + "..." if len(event.description) > 40 else event.description
+            timestamp = (
+                event.timestamp[:19].replace("T", " ") if event.timestamp else "N/A"
+            )
+            description = (
+                event.description[:37] + "..."
+                if len(event.description) > 40
+                else event.description
+            )
 
             table.add_row(
                 event.type.replace("_", " ").title(),
@@ -396,7 +432,9 @@ class RenderCLI:
 
         console.print(table)
 
-    def view_logs(self, service_name: str, lines: int = 100, stream: bool = False) -> None:
+    def view_logs(
+        self, service_name: str, lines: int = 100, stream: bool = False
+    ) -> None:
         """Handle logs command"""
         service = self._find_service(service_name)
         if not service:
@@ -409,9 +447,13 @@ class RenderCLI:
                 if not owner_id:
                     display_warning("Could not get owner ID for log streaming")
                     return
-                
+
                 display_info("Starting log stream... Press Ctrl+C to stop")
-                asyncio.run(self.render_service.api.stream_logs_async(service.id, owner_id, lines))
+                asyncio.run(
+                    self.render_service.api.stream_logs_async(
+                        service.id, owner_id, lines
+                    )
+                )
             else:
                 # Get static logs
                 logs = self.render_service.api.get_service_logs(service.id, lines)
@@ -426,9 +468,13 @@ class RenderCLI:
             display_error(f"Failed to get logs: {e.message}")
 
     def manage_log_streams(
-        self, action: str, stream_id: Optional[str] = None, name: Optional[str] = None,
-        service_id: Optional[str] = None, level_filter: Optional[str] = None,
-        enabled: bool = True
+        self,
+        action: str,
+        stream_id: Optional[str] = None,
+        name: Optional[str] = None,
+        service_id: Optional[str] = None,
+        level_filter: Optional[str] = None,
+        enabled: bool = True,
     ) -> None:
         """Handle log streams management"""
         try:
@@ -438,23 +484,30 @@ class RenderCLI:
                     display_warning("No log streams found")
                     return
 
-                table = _create_table(f"📡 Log Streams ({len(streams)})", [
-                    ("ID", "cyan", 20),
-                    ("Name", "green", 25),
-                    ("Service", "blue", 20),
-                    ("Filters", "magenta", 30),
-                    ("Status", "yellow", 10),
-                    ("Created", "dim", 12),
-                ])
+                table = _create_table(
+                    f"📡 Log Streams ({len(streams)})",
+                    [
+                        ("ID", "cyan", 20),
+                        ("Name", "green", 25),
+                        ("Service", "blue", 20),
+                        ("Filters", "magenta", 30),
+                        ("Status", "yellow", 10),
+                        ("Created", "dim", 12),
+                    ],
+                )
 
                 for stream in streams:
-                    filters_str = ", ".join([f"{k}:{v}" for k, v in stream.filters.items()])
+                    filters_str = ", ".join(
+                        [f"{k}:{v}" for k, v in stream.filters.items()]
+                    )
                     status = "✅ Enabled" if stream.enabled else "❌ Disabled"
                     table.add_row(
                         stream.id[:18] + "...",
                         stream.name,
                         stream.service_id[:18] + "...",
-                        filters_str[:28] + "..." if len(filters_str) > 28 else filters_str,
+                        filters_str[:28] + "..."
+                        if len(filters_str) > 28
+                        else filters_str,
                         status,
                         stream.created_at[:10],
                     )
@@ -462,7 +515,9 @@ class RenderCLI:
 
             elif action == "create":
                 if not all([name, service_id]):
-                    display_error("--name and --service are required for creating streams")
+                    display_error(
+                        "--name and --service are required for creating streams"
+                    )
                     return
 
                 filters = {}
@@ -473,9 +528,13 @@ class RenderCLI:
                     else:
                         display_warning(f"Invalid log level '{level_filter}'")
 
-                stream = self.render_service.api.create_log_stream(
-                    name=name, service_id=service_id, filters=filters, enabled=enabled
-                )
+                if name is not None and service_id is not None:
+                    stream = self.render_service.api.create_log_stream(
+                        name=name,
+                        service_id=service_id,
+                        filters=filters,
+                        enabled=enabled,
+                    )
                 display_success(f"Created log stream: {stream.name} ({stream.id})")
 
             else:
@@ -559,6 +618,7 @@ class RenderCLI:
     def _wait_for_job_completion(self, job_id: str, timeout_minutes: int = 5) -> None:
         """Wait for job to complete"""
         import time
+
         start_time = time.time()
         timeout_seconds = timeout_minutes * 60
 
@@ -567,12 +627,12 @@ class RenderCLI:
             TextColumn("[progress.description]{task.description}"),
             console=console,
         ) as progress:
-            task = progress.add_task("Waiting for job to complete...", total=None)
+            progress.add_task("Waiting for job to complete...", total=None)
 
             while time.time() - start_time < timeout_seconds:
                 try:
                     job = self.render_service.api.get_job_status(job_id)
-                    
+
                     if job.status in ["succeeded", "failed"]:
                         progress.stop()
                         if job.status == "succeeded":
@@ -580,7 +640,7 @@ class RenderCLI:
                         else:
                             display_error(f"Job {job_id} failed")
                         return
-                    
+
                     time.sleep(5)
                 except APIError:
                     time.sleep(5)
@@ -597,19 +657,22 @@ class RenderCLI:
             display_warning("No projects found")
             return
 
-        table = _create_table(f"Your Render Projects ({len(projects)})", [
-            ("Name", "cyan", 25),
-            ("Owner", "green", 20),
-            ("Type", "magenta", 10),
-            ("Environments", "yellow", 12),
-            ("Created", "blue", 12),
-        ])
+        table = _create_table(
+            f"Your Render Projects ({len(projects)})",
+            [
+                ("Name", "cyan", 25),
+                ("Owner", "green", 20),
+                ("Type", "magenta", 10),
+                ("Environments", "yellow", 12),
+                ("Created", "blue", 12),
+            ],
+        )
 
         for project in projects:
             owner_display = f"{project.owner.name} ({project.owner.type})"
             env_count = len(project.environment_ids)
             created = project.created_at[:10] if project.created_at else "N/A"
-            
+
             table.add_row(
                 project.name,
                 owner_display,
@@ -641,20 +704,27 @@ class RenderCLI:
         """
 
         if detailed_project.owner.two_factor_auth_enabled is not None:
-            status = "✅ Enabled" if detailed_project.owner.two_factor_auth_enabled else "❌ Disabled"
+            status = (
+                "✅ Enabled"
+                if detailed_project.owner.two_factor_auth_enabled
+                else "❌ Disabled"
+            )
             info += f"🔒 **2FA:** {status}\n"
 
         console.print(Panel(info, title="📋 Project Information", expand=False))
 
         # Show environment IDs if any
         if detailed_project.environment_ids:
-            env_table = _create_table("🌍 Environment IDs", [
-                ("Environment ID", "cyan", 30),
-            ])
-            
+            env_table = _create_table(
+                "🌍 Environment IDs",
+                [
+                    ("Environment ID", "cyan", 30),
+                ],
+            )
+
             for env_id in detailed_project.environment_ids:
                 env_table.add_row(env_id)
-                
+
             console.print(env_table)
 
     def _find_project(self, name_or_id: str) -> Optional[Project]:
@@ -691,47 +761,57 @@ class RenderCLI:
         console.print(f"🌍 Environments: {len(project.environment_ids)}", style="dim")
 
         # Create table for services
-        columns = [
+        columns: list[Union[tuple[str, str], tuple[str, str, int]]] = [
             ("Name", "cyan", 20),
-            ("Type", "magenta", 12), 
+            ("Type", "magenta", 12),
             ("Status", "green", 12),
         ]
         if detailed:
-            columns.extend([("Region", "yellow", 10), ("Plan", "blue", 10), ("Created", "dim", 12)])
+            columns.extend(
+                [("Region", "yellow", 10), ("Plan", "blue", 10), ("Created", "dim", 12)]
+            )
         columns.append(("URL", "blue"))
 
-        table = _create_table(f"Services in '{project.name}' ({len(services)})", columns)
+        table = _create_table(
+            f"Services in '{project.name}' ({len(services)})", columns
+        )
 
         for service in services:
             # Get status display
             status_display = f"{service.status_icon} {service.status.title()}"
             service_type_display = service.type.replace("_", " ").title()
-            
+
             # Build URL
             url = service.url or "N/A"
             if not url or url == "N/A":
                 if service.slug:
                     url = f"https://{service.slug}.onrender.com"
                 elif service.name:
-                    url = f"https://{service.name.lower().replace('_', '-')}.onrender.com"
+                    url = (
+                        f"https://{service.name.lower().replace('_', '-')}.onrender.com"
+                    )
 
             row_data = [service.name, service_type_display, status_display]
-            
+
             if detailed:
                 region = service.region or "N/A"
                 plan = service.plan or "N/A"
                 created = service.created_at[:10] if service.created_at else "N/A"
                 row_data.extend([region, plan, created])
-            
+
             row_data.append(url)
             table.add_row(*row_data)
 
         console.print(table)
 
-    def list_environment_services(self, environment_id: str, detailed: bool = False) -> None:
+    def list_environment_services(
+        self, environment_id: str, detailed: bool = False
+    ) -> None:
         """Handle list services in environment command"""
         with console.status(f"Getting services in environment '{environment_id}'..."):
-            services = self.render_service.api.list_services_by_environment(environment_id)
+            services = self.render_service.api.list_services_by_environment(
+                environment_id
+            )
 
         if not services:
             display_warning(f"No services found in environment '{environment_id}'")
@@ -741,13 +821,15 @@ class RenderCLI:
         console.print(f"🌍 Environment: {environment_id}", style="cyan")
 
         # Create table for services
-        columns = [
+        columns: list[Union[tuple[str, str], tuple[str, str, int]]] = [
             ("Name", "cyan", 20),
-            ("Type", "magenta", 12), 
+            ("Type", "magenta", 12),
             ("Status", "green", 12),
         ]
         if detailed:
-            columns.extend([("Region", "yellow", 10), ("Plan", "blue", 10), ("Created", "dim", 12)])
+            columns.extend(
+                [("Region", "yellow", 10), ("Plan", "blue", 10), ("Created", "dim", 12)]
+            )
         columns.append(("URL", "blue"))
 
         table = _create_table(f"Services in Environment ({len(services)})", columns)
@@ -756,23 +838,25 @@ class RenderCLI:
             # Get status display
             status_display = f"{service.status_icon} {service.status.title()}"
             service_type_display = service.type.replace("_", " ").title()
-            
+
             # Build URL
             url = service.url or "N/A"
             if not url or url == "N/A":
                 if service.slug:
                     url = f"https://{service.slug}.onrender.com"
                 elif service.name:
-                    url = f"https://{service.name.lower().replace('_', '-')}.onrender.com"
+                    url = (
+                        f"https://{service.name.lower().replace('_', '-')}.onrender.com"
+                    )
 
             row_data = [service.name, service_type_display, status_display]
-            
+
             if detailed:
                 region = service.region or "N/A"
                 plan = service.plan or "N/A"
                 created = service.created_at[:10] if service.created_at else "N/A"
                 row_data.extend([region, plan, created])
-            
+
             row_data.append(url)
             table.add_row(*row_data)
 

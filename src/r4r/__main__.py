@@ -6,4 +6,5 @@ This allows running: python -m r4r
 
 if __name__ == "__main__":
     from .cli import app
-    app() 
+
+    app()

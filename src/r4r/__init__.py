@@ -10,10 +10,10 @@ from .config import Config, ServiceStatus, ServiceType
 __all__ = [
     "Config",
     "Deploy",
-    "Event", 
+    "Event",
     "Job",
     "Owner",
-    "Project", 
+    "Project",
     "RenderCLI",
     "RenderService",
     "Service",

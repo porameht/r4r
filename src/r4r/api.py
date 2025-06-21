@@ -4,7 +4,6 @@ r4r Render API Client
 Consolidated API client for all Render operations
 """
 
-import asyncio
 import json
 import re
 import time
@@ -145,7 +144,9 @@ class Deploy:
             created_at=data.get("createdAt", ""),
             finished_at=data.get("finishedAt"),
             commit_id=data.get("commit", {}).get("id") if data.get("commit") else None,
-            commit_message=data.get("commit", {}).get("message") if data.get("commit") else None,
+            commit_message=data.get("commit", {}).get("message")
+            if data.get("commit")
+            else None,
         )
 
     @property
@@ -281,7 +282,11 @@ class RenderAPI:
     def _extract_items(self, data: Any, key: str) -> List[Dict[str, Any]]:
         """Extract items from nested API response"""
         if isinstance(data, list):
-            return [item.get(key, item) for item in data if key in item or "name" in item or "id" in item]
+            return [
+                item.get(key, item)
+                for item in data
+                if key in item or "name" in item or "id" in item
+            ]
         return data.get(f"{key}s", []) if isinstance(data, dict) else []
 
     # Service Management Methods
@@ -290,18 +295,18 @@ class RenderAPI:
         all_services = []
         cursor = None
         page_limit = 100  # Max per page to get all services efficiently
-        
+
         while True:
             params = {"limit": page_limit}
             if cursor:
                 params["cursor"] = cursor
-                
+
             data = self.client.get("services", params=params)
-            
+
             # Handle response format
             if isinstance(data, list):
                 services_data = self._extract_items(data, "service")
-                
+
                 for item in data:
                     if "service" in item:
                         service_data = item["service"]
@@ -316,19 +321,19 @@ class RenderAPI:
                                 service_data["status"] = "unknown"
                         else:
                             service_data["status"] = "unknown"
-                            
+
                         all_services.append(Service.from_dict(service_data))
-                        
+
                     # Check for next page cursor
                     if "cursor" in item:
                         cursor = item["cursor"]
                     else:
                         cursor = None
-                        
+
                 # If we got fewer than page limit, we're done
                 if len(data) < page_limit:
                     break
-                    
+
             else:
                 # Handle non-paginated response
                 services_data = self._extract_items(data, "service")
@@ -344,14 +349,14 @@ class RenderAPI:
                             service["status"] = "unknown"
                     else:
                         service["status"] = "unknown"
-                        
+
                     all_services.append(Service.from_dict(service))
                 break
-                
+
         # Apply limit if specified
         if limit and len(all_services) > limit:
             all_services = all_services[:limit]
-            
+
         return all_services
 
     def find_service(self, name_or_id: str) -> Optional[Service]:
@@ -526,37 +531,38 @@ class RenderAPI:
         """List all services in a specific project"""
         # Get project details to get environment IDs
         project = self.get_project_details(project_id)
-        
+
         # Get all services
         all_services = self.list_services()
-        
+
         # Filter services by environment IDs in the project
         project_services = []
         for service in all_services:
             try:
-                # Get service details to check environment
-                service_data = self.client.get(f"services/{service.id}")
-                if service_data.get("environmentId") in project.environment_ids:
+                # Get detailed service info to check environment
+                service_details = self.client.get(f"services/{service.id}")
+                if service_details.get("environmentId") in project.environment_ids:
                     project_services.append(service)
-            except:
+            except (AttributeError, KeyError, TypeError):
                 # Skip if we can't determine environment
                 continue
-                
+
         return project_services
 
     def list_services_by_environment(self, environment_id: str) -> List[Service]:
         """List all services in a specific environment"""
         all_services = self.list_services()
         env_services = []
-        
+
         for service in all_services:
             try:
-                service_data = self.client.get(f"services/{service.id}")
-                if service_data.get("environmentId") == environment_id:
+                # Get detailed service info to check environment
+                service_details = self.client.get(f"services/{service.id}")
+                if service_details.get("environmentId") == environment_id:
                     env_services.append(service)
-            except:
+            except (AttributeError, KeyError, TypeError):
                 continue
-                
+
         return env_services
 
     # User and Account Methods
@@ -567,9 +573,11 @@ class RenderAPI:
     def get_owner_id(self) -> str:
         """Get the owner/workspace ID for the current user"""
         owners_data = self.client.get("owners")
-        if owners_data and len(owners_data) > 0:
-            owner = owners_data[0].get("owner", {})
-            return owner.get("id", "")
+        if isinstance(owners_data, list) and len(owners_data) > 0:
+            owner_item = owners_data[0]
+            if isinstance(owner_item, dict):
+                owner = owner_item.get("owner", {})
+                return owner.get("id", "")
         return ""
 
     # Logs Methods
@@ -578,7 +586,9 @@ class RenderAPI:
         params = {"lines": lines}
         return self.client.get(f"services/{service_id}/logs", params=params)
 
-    async def stream_logs_async(self, service_id: str, owner_id: str, lines: int = 100) -> None:
+    async def stream_logs_async(
+        self, service_id: str, owner_id: str, lines: int = 100
+    ) -> None:
         """Stream logs via WebSocket"""
         params = {
             "ownerId": owner_id,
@@ -591,48 +601,62 @@ class RenderAPI:
         headers = {"Authorization": f"Bearer {self.config.api_key}"}
 
         try:
-            async with websockets.connect(ws_url, additional_headers=headers) as websocket:
+            async with websockets.connect(
+                ws_url, additional_headers=headers
+            ) as websocket:
                 console.print("🔗 Connected to log stream...", style="green")
                 async for message in websocket:
                     try:
                         log_data = json.loads(message)
                         self._format_log_message(log_data)
                     except json.JSONDecodeError:
-                        console.print(f"Raw: {message}", style="dim")
+                        # Handle potential bytes message
+                        message_str = (
+                            message
+                            if isinstance(message, str)
+                            else message.decode("utf-8")
+                        )
+                        console.print(f"Raw: {message_str}", style="dim")
         except Exception as e:
             console.print(f"❌ Connection error: {e}", style="red")
 
     def _format_log_message(self, log_data: Dict[str, Any]) -> None:
         """Format and display a single log message"""
-        timestamp = log_data.get("timestamp", "")
-        message = log_data.get("message", "")
-        
-        # Parse labels for metadata
-        labels = {label["name"]: label["value"] for label in log_data.get("labels", []) 
-                 if isinstance(label, dict) and "name" in label}
-        
-        level = labels.get("level", "info").upper()
-        log_type = labels.get("type", "app")
-        
-        # Format timestamp
         try:
-            if timestamp:
-                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                time_str = dt.strftime("%H:%M:%S")
+            # Parse timestamp from log data
+            if "timestamp" in log_data:
+                timestamp = datetime.fromisoformat(
+                    log_data["timestamp"].replace("Z", "+00:00")
+                )
+                time_str = timestamp.strftime("%H:%M:%S")
             else:
                 time_str = datetime.now().strftime("%H:%M:%S")
-        except:
-            time_str = timestamp[:8] if timestamp else datetime.now().strftime("%H:%M:%S")
-        
+        except (ValueError, TypeError, AttributeError):
+            time_str = datetime.now().strftime("%H:%M:%S")
+
+        message = log_data.get("message", "")
+
+        # Parse labels for metadata
+        labels = {
+            label["name"]: label["value"]
+            for label in log_data.get("labels", [])
+            if isinstance(label, dict) and "name" in label
+        }
+
+        level = labels.get("level", "info").upper()
+        log_type = labels.get("type", "app")
+
         # Clean message
-        clean_message = re.sub(r'\x1b\[[0-9;]*[mK]', '', message)
-        clean_message = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', clean_message).strip()
-        
+        clean_message = re.sub(r"\x1b\[[0-9;]*[mK]", "", message)
+        clean_message = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", clean_message).strip()
+
         # Color by level
         colors = {"ERROR": "red", "WARN": "yellow", "INFO": "blue", "DEBUG": "dim"}
         level_color = colors.get(level, "white")
-        
-        console.print(f"[dim]{time_str}[/dim] [{level_color}]{level}[/{level_color}] [magenta]{log_type}[/magenta] {clean_message}")
+
+        console.print(
+            f"[dim]{time_str}[/dim] [{level_color}]{level}[/{level_color}] [magenta]{log_type}[/magenta] {clean_message}"
+        )
 
     # Log Stream Methods (placeholder implementations)
     def list_log_streams(self, service_id: Optional[str] = None) -> List[LogStream]:
